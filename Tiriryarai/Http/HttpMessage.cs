@@ -29,11 +29,11 @@ namespace Tiriryarai.Http
 	/// A class representing a generic HTTP message with only headers and
 	/// the entity body.
 	/// </summary>
-    public class HttpMessage
-    {
-        public List<KeyValuePair<string, string[]>> Headers { get; }
+	public class HttpMessage
+	{
+		public List<KeyValuePair<string, string[]>> Headers { get; }
 
-        public byte[] Body { get; set; }
+		public byte[] Body { get; set; }
 
 		/// <summary>
 		/// Gets the entity body without chunk encoding.
@@ -52,50 +52,50 @@ namespace Tiriryarai.Http
 		/// </summary>
 		/// <value>The value of the <code>Content-Length</code> header if present.</value>
 		public uint? ContentLength
-        {
-            get
-            {
-                string[] len = GetHeader("Content-Length");
-                if (len != null && len.Length > 0 && uint.TryParse(len[0], out uint contentLength))
-                {
-                    return contentLength;
-                }
-                return null;
-            }
-        }
+		{
+			get
+			{
+				string[] len = GetHeader("Content-Length");
+				if (len != null && len.Length > 0 && uint.TryParse(len[0], out uint contentLength))
+				{
+					return contentLength;
+				}
+				return null;
+			}
+		}
 
 		/// <summary>
 		/// Gets a value indicating whether the entity body of this <see cref="T:Tiriryarai.Http.HttpMessage"/> is chunked.
 		/// </summary>
 		/// <value><c>true</c> if chunked; otherwise, <c>false</c>.</value>
-        public bool Chunked
-        {
-            get
-            {
-                string[] transferEncoding = GetHeader("Transfer-Encoding");
-                if (transferEncoding != null)
-                {
-                    for (int i = 0; i < transferEncoding.Length; i++)
-                    {
-                        if (transferEncoding[i].ToLower().Equals("chunked"))
-                            return true;
-                    }
-                }  
-                return false;
-            }
-        }
+		public bool Chunked
+		{
+			get
+			{
+				string[] transferEncoding = GetHeader("Transfer-Encoding");
+				if (transferEncoding != null)
+				{
+					for (int i = 0; i < transferEncoding.Length; i++)
+					{
+						if (transferEncoding[i].ToLower().Equals("chunked"))
+							return true;
+					}
+				}
+				return false;
+			}
+		}
 
-        protected HttpMessage(List<KeyValuePair<string, string[]>> headers): this(headers, new byte[0]) { }
+		protected HttpMessage(List<KeyValuePair<string, string[]>> headers): this(headers, new byte[0]) { }
 
-        protected HttpMessage(List<KeyValuePair<string, string[]>> headers, byte[] body)
-        {
-            if (headers == null)
-                headers = new List<KeyValuePair<string, string[]>>();
-            if (body == null)
-                body = new byte[0];
-            Headers = headers;
-            Body = body;
-        }
+		protected HttpMessage(List<KeyValuePair<string, string[]>> headers, byte[] body)
+		{
+			if (headers == null)
+				headers = new List<KeyValuePair<string, string[]>>();
+			if (body == null)
+				body = new byte[0];
+			Headers = headers;
+			Body = body;
+		}
 
 		/// <summary>
 		/// Gets the values of the given header.
@@ -103,208 +103,208 @@ namespace Tiriryarai.Http
 		/// <returns>The values of the given header.</returns>
 		/// <param name="key">The header whose values to retreive.</param>
 		public string[] GetHeader(string key)
-        {
-            if (key != null)
-            {
-                foreach (KeyValuePair<string, string[]> header in Headers)
-                {
-                    if (key.Equals(header.Key))
-                        return header.Value;
-                }
-            }
-            return null;
-        }
+		{
+			if (key != null)
+			{
+				foreach (KeyValuePair<string, string[]> header in Headers)
+				{
+					if (key.Equals(header.Key))
+						return header.Value;
+				}
+			}
+			return null;
+		}
 
 		/// <summary>
 		/// Adds the given header and value if not present; otherwise, replaces the existing headers value.
 		/// </summary>
 		/// <param name="key">The header to set.</param>
 		/// <param name="val">The header's value.</param>
-        public void SetHeader(string key, string val)
-        {
-            SetHeader(new KeyValuePair<string, string[]>(key, new string[] { val }));
-        }
+		public void SetHeader(string key, string val)
+		{
+			SetHeader(new KeyValuePair<string, string[]>(key, new string[] { val }));
+		}
 
 		/// <summary>
 		/// Adds the given header and value if not present; otherwise, replaces the existing headers value.
 		/// </summary>
 		/// <param name="header">The header and value to set.</param>
 		public void SetHeader(KeyValuePair<string, string[]> header)
-        {
-            for (int i = 0; i < Headers.Count; i++)
-            {
-                if (Headers[i].Key.Equals(header.Key))
-                {
-                    Headers[i] = header;
-                    return;
-                }
-            }
-            Headers.Add(header);
-        }
+		{
+			for (int i = 0; i < Headers.Count; i++)
+			{
+				if (Headers[i].Key.Equals(header.Key))
+				{
+					Headers[i] = header;
+					return;
+				}
+			}
+			Headers.Add(header);
+		}
 
 		/// <summary>
 		/// Sets the entity body and automatically updates or adds the <code>Content-Length</code>
 		/// header accordingly.
 		/// </summary>
 		/// <param name="body">The new entity body.</param>
-        public void SetBodyAndLength(byte[] body)
-        {
-            SetHeader("Content-Length", "" + body.Length);
-            Body = body;
-        }
+		public void SetBodyAndLength(byte[] body)
+		{
+			SetHeader("Content-Length", "" + body.Length);
+			Body = body;
+		}
 
 		/// <summary>
 		/// Treats the entity body as form-encoded a string and retrives the value of a given parameter.
 		/// </summary>
 		/// <returns>The value of the parameter if it exists; otherwise, <c>null</c>.</returns>
 		/// <param name="param">The parameter to retrieve.</param>
-        public string GetBodyParam(string param)
-        {
-            return ExtractUrlEncodedParam(Encoding.Default.GetString(Body), param);
-        }
+		public string GetBodyParam(string param)
+		{
+			return ExtractUrlEncodedParam(Encoding.Default.GetString(Body), param);
+		}
 
-        protected string ExtractUrlEncodedParam(string urlEncoded, string param)
-        {
-            int i;
-            string[] keyVals = urlEncoded.Split('&');
-            foreach (string keyVal in keyVals)
-            {
-                if (string.IsNullOrWhiteSpace(keyVal))
-                    continue;
-                string key;
-                string val;
-                i = keyVal.IndexOf('=');
-                if (i >= 0)
-                {
-                    key = keyVal.Substring(0, i);
-                    val = keyVal.Substring(i + 1);
-                }
-                else
-                {
-                    key = keyVal;
-                    val = "";
-                }
-                if (key.Equals(param))
-                {
-                    return val;
-                }
-            }
-            return null;
-        }
+		protected string ExtractUrlEncodedParam(string urlEncoded, string param)
+		{
+			int i;
+			string[] keyVals = urlEncoded.Split('&');
+			foreach (string keyVal in keyVals)
+			{
+				if (string.IsNullOrWhiteSpace(keyVal))
+					continue;
+				string key;
+				string val;
+				i = keyVal.IndexOf('=');
+				if (i >= 0)
+				{
+					key = keyVal.Substring(0, i);
+					val = keyVal.Substring(i + 1);
+				}
+				else
+				{
+					key = keyVal;
+					val = "";
+				}
+				if (key.Equals(param))
+				{
+					return val;
+				}
+			}
+			return null;
+		}
 
-        protected static HttpMessage FromStream(Stream stream)
-        {
-            return FromStream(stream, true);
-        }
+		protected static HttpMessage FromStream(Stream stream)
+		{
+			return FromStream(stream, true);
+		}
 
-        protected static HttpMessage FromStream(Stream stream, bool hasBody)
-        {
-            HttpMessage http;
-            List<KeyValuePair<string, string[]>> headers = new List<KeyValuePair<string, string[]>>();
-            string[] keyVal;
-            string[] vals;
+		protected static HttpMessage FromStream(Stream stream, bool hasBody)
+		{
+			HttpMessage http;
+			List<KeyValuePair<string, string[]>> headers = new List<KeyValuePair<string, string[]>>();
+			string[] keyVal;
+			string[] vals;
 
-            for (string line = ReadLine(stream); line != null && !"".Equals(line); line = ReadLine(stream))
-            {
-                int split = line.IndexOf(": ", StringComparison.Ordinal);
-                if (split < 0)
-                    throw new Exception("Bad header: " + line);
-                keyVal = new string[] {line.Substring(0, split), line.Substring(split + 2)};
-                
-                vals = keyVal[1].Split(',');
-                for (int i = 0; i < vals.Length; i++)
-                    vals[i] = vals[i].Trim();
-                headers.Add(new KeyValuePair<string, string[]>(keyVal[0], vals));
-            }
-            http = new HttpMessage(headers);
-            return hasBody ? ReadMessageBody(http, stream) : http;
-        }
+			for (string line = ReadLine(stream); line != null && !"".Equals(line); line = ReadLine(stream))
+			{
+				int split = line.IndexOf(": ", StringComparison.Ordinal);
+				if (split < 0)
+					throw new Exception("Bad header: " + line);
+				keyVal = new string[] {line.Substring(0, split), line.Substring(split + 2)};
 
-        public void ToStream(Stream stream)
-        {
-            byte[] enc = Encoding.Default.GetBytes(ToString());
-            stream.Write(enc, 0, enc.Length);
-            stream.Write(Body, 0, Body.Length);
-            stream.Flush();
-        }
+				vals = keyVal[1].Split(',');
+				for (int i = 0; i < vals.Length; i++)
+					vals[i] = vals[i].Trim();
+				headers.Add(new KeyValuePair<string, string[]>(keyVal[0], vals));
+			}
+			http = new HttpMessage(headers);
+			return hasBody ? ReadMessageBody(http, stream) : http;
+		}
 
-        public override string ToString()
-        {
-            StringBuilder builder = new StringBuilder();
-            foreach (KeyValuePair<string, string[]> header in Headers)
-            {
-                builder.Append(header.Key + ": " + string.Join(", ", header.Value) + "\r\n");
-            }
-            builder.Append("\r\n");
-            return builder.ToString();
-        }
+		public void ToStream(Stream stream)
+		{
+			byte[] enc = Encoding.Default.GetBytes(ToString());
+			stream.Write(enc, 0, enc.Length);
+			stream.Write(Body, 0, Body.Length);
+			stream.Flush();
+		}
 
-        protected static Stream Streamify(string s)
-        {
-            MemoryStream stream = new MemoryStream();
-            StreamWriter writer = new StreamWriter(stream);
-            writer.Write(s);
-            writer.Flush();
-            stream.Position = 0;
-            return stream;
-        }
+		public override string ToString()
+		{
+			StringBuilder builder = new StringBuilder();
+			foreach (KeyValuePair<string, string[]> header in Headers)
+			{
+				builder.Append(header.Key + ": " + string.Join(", ", header.Value) + "\r\n");
+			}
+			builder.Append("\r\n");
+			return builder.ToString();
+		}
 
-        protected static string ReadLine(Stream stream)
-        {
-            return ReadLine(stream, 4096);
-        }
+		protected static Stream Streamify(string s)
+		{
+			MemoryStream stream = new MemoryStream();
+			StreamWriter writer = new StreamWriter(stream);
+			writer.Write(s);
+			writer.Flush();
+			stream.Position = 0;
+			return stream;
+		}
 
-        protected static string ReadLine(Stream stream, int maxLen)
-        {
-            int bytes = 0;
-            char[] headBuf = new char[maxLen];
-            int b;
-            do
-            {
-                b = stream.ReadByte();
-                if (b < 0)
-                {
-                    if (bytes == 0)
-                        return null;
-                    break;
-                }
+		protected static string ReadLine(Stream stream)
+		{
+			return ReadLine(stream, 4096);
+		}
 
-                headBuf[bytes] = (char)b;
+		protected static string ReadLine(Stream stream, int maxLen)
+		{
+			int bytes = 0;
+			char[] headBuf = new char[maxLen];
+			int b;
+			do
+			{
+				b = stream.ReadByte();
+				if (b < 0)
+				{
+					if (bytes == 0)
+						return null;
+					break;
+				}
 
-                if (bytes >= 1)
-                {
-                    if (headBuf[bytes] == '\n' &&
-                        headBuf[bytes - 1] == '\r')
-                    {
-                        return new string(headBuf, 0, bytes - 1);
-                    }
-                }
-                bytes++;
-            } while (bytes < headBuf.Length);
+				headBuf[bytes] = (char)b;
 
-            throw new Exception("Remote sent an unexpectedly long line: " + new string(headBuf, 0, headBuf.Length));
-        }
+				if (bytes >= 1)
+				{
+					if (headBuf[bytes] == '\n' &&
+						headBuf[bytes - 1] == '\r')
+					{
+						return new string(headBuf, 0, bytes - 1);
+					}
+				}
+				bytes++;
+			} while (bytes < headBuf.Length);
 
-        private static HttpMessage ReadMessageBody(HttpMessage http, Stream stream)
-        {
-            byte[] bytes = new byte[0];
-            uint? contentLength;
+			throw new Exception("Remote sent an unexpectedly long line: " + new string(headBuf, 0, headBuf.Length));
+		}
 
-            if (http.Chunked)
-            {
+		private static HttpMessage ReadMessageBody(HttpMessage http, Stream stream)
+		{
+			byte[] bytes = new byte[0];
+			uint? contentLength;
+
+			if (http.Chunked)
+			{
 				bytes = ReadChunked(stream, true);
-            } 
-            else
-            {
-                contentLength = http.ContentLength;
-                if (contentLength != null)
-                {
-                    bytes = ReadBytes(stream, (uint)contentLength);
-                }
-            }
-            http.Body = bytes;
-            return http;
-        }
+			}
+			else
+			{
+				contentLength = http.ContentLength;
+				if (contentLength != null)
+				{
+					bytes = ReadBytes(stream, (uint)contentLength);
+				}
+			}
+			http.Body = bytes;
+			return http;
+		}
 
 		private static byte[] ReadChunked(Stream stream, bool keepEncoding)
 		{
@@ -336,41 +336,41 @@ namespace Tiriryarai.Http
 		}
 
 		private static byte[] ReadBytes(Stream stream, uint len)
-        {
-            if (stream == null)
-                return new byte[0];
-            if (len > (1 << 30))
-                throw new Exception("The server tried to send way too much data.");
-            int i;
-            int b;
-            byte[] bytes = new byte[len];
-            for (i = 0; i < len && (b = stream.ReadByte()) >= 0; i++)
-            {
-                bytes[i] = (byte)b;
-            }
+		{
+			if (stream == null)
+				return new byte[0];
+			if (len > (1 << 30))
+				throw new Exception("The server tried to send way too much data.");
+			int i;
+			int b;
+			byte[] bytes = new byte[len];
+			for (i = 0; i < len && (b = stream.ReadByte()) >= 0; i++)
+			{
+				bytes[i] = (byte)b;
+			}
 
-            if (i < len)
-            {
-                Array.Resize(ref bytes, i);
-            }
-            return bytes;
-        }
+			if (i < len)
+			{
+				Array.Resize(ref bytes, i);
+			}
+			return bytes;
+		}
 
-        private static byte[] ReadAllBytes(Stream stream)
-        {
-            // Read until the server closes the connection
-            if (stream == null)
-                return new byte[0];
-            List<byte> bytesList = new List<byte>(4096);
-            byte[] bytes;
-            long b;
-            while ((b = stream.ReadByte()) >= 0)
-            {
-                bytesList.Add((byte)b);
-            }
-            bytes = bytesList.ToArray();
+		private static byte[] ReadAllBytes(Stream stream)
+		{
+			// Read until the server closes the connection
+			if (stream == null)
+				return new byte[0];
+			List<byte> bytesList = new List<byte>(4096);
+			byte[] bytes;
+			long b;
+			while ((b = stream.ReadByte()) >= 0)
+			{
+				bytesList.Add((byte)b);
+			}
+			bytes = bytesList.ToArray();
 
-            return bytes;
-        }
-    }
+			return bytes;
+		}
+	}
 }

@@ -30,19 +30,19 @@ namespace Tiriryarai.Server
 	/// A class for sending HTTP requests to hosts and retreiving HTTP responses.
 	/// WARNING: Ignores invalid certificates.
 	/// </summary>
-    class HttpsClient
-    {
-        private readonly string hostname;
-        private readonly ushort port;
-        private static bool ValidateServerCertificate(
-              object sender,
-              X509Certificate certificate,
-              X509Chain chain,
-              SslPolicyErrors sslPolicyErrors)
-        {
-            // WARNING: Ignore invalid certificates
-            return true;
-        }
+	class HttpsClient
+	{
+		private readonly string hostname;
+		private readonly ushort port;
+		private static bool ValidateServerCertificate(
+			object sender,
+			X509Certificate certificate,
+			X509Chain chain,
+			SslPolicyErrors sslPolicyErrors)
+		{
+			// WARNING: Ignore invalid certificates
+			return true;
+		}
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Server.HttpsClient"/> class
@@ -74,25 +74,25 @@ namespace Tiriryarai.Server
 		/// </summary>
 		/// <returns>The retreived HTTP response.</returns>
 		/// <param name="req">The HTTP request to send.</param>
-        public HttpResponse Send(HttpRequest req)
-        {
-            HttpResponse resp = null;
-            TcpClient client = new TcpClient(hostname, port);
-            SslStream sslStream = new SslStream(
-                client.GetStream(),
-                false,
-                new RemoteCertificateValidationCallback(ValidateServerCertificate),
-                null
-            );
-            sslStream.AuthenticateAsClient(client.Client.RemoteEndPoint.ToString(), null, 
-                SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12 | SslProtocols.Tls13, false);
-            req.ToStream(sslStream);
-            sslStream.Flush();
+		public HttpResponse Send(HttpRequest req)
+		{
+			HttpResponse resp = null;
+			TcpClient client = new TcpClient(hostname, port);
+			SslStream sslStream = new SslStream(
+				client.GetStream(),
+				false,
+				new RemoteCertificateValidationCallback(ValidateServerCertificate),
+				null
+			);
+			sslStream.AuthenticateAsClient(client.Client.RemoteEndPoint.ToString(), null, 
+				SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12 | SslProtocols.Tls13, false);
+			req.ToStream(sslStream);
+			sslStream.Flush();
 
-            resp = HttpResponse.FromStream(sslStream);
-            
-            client.Close();
-            return resp;
-        }
-    }
+			resp = HttpResponse.FromStream(sslStream);
+
+			client.Close();
+			return resp;
+		}
+	}
 }

@@ -24,8 +24,8 @@ namespace Tiriryarai.Util
 	/// <summary>
 	/// A class that contains static resources used by Tiriryarai.
 	/// </summary>
-    static class Resources
-    {
+	static class Resources
+	{
 		public static readonly string CA_ISSUER_PATH = "/TiriryaraiCA.crt";
 		public static readonly string OCSP_PATH = "/ocsp";
 		public static readonly string CRL_PATH = "/revoked.crl";
@@ -41,12 +41,12 @@ namespace Tiriryarai.Util
 		{
 			20, 65, 172, 5, 201, 49, 53, 97, 34, 122, 109, 32, 73, 230, 85, 169, 140, 11, 24, 158
 		};
-        public static string OCSP_CN = "TiriryaraiCA OCSP Responder";
+		public static string OCSP_CN = "TiriryaraiCA OCSP Responder";
 
 		public static byte[] Get(string name)
 		{
 			MemoryStream ms = new MemoryStream();
-            typeof(Resources).Assembly.GetManifestResourceStream(name).CopyTo(ms);
+			typeof(Resources).Assembly.GetManifestResourceStream(name).CopyTo(ms);
 			return ms.ToArray();
 		}
 	}

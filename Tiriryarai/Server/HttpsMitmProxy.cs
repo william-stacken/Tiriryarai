@@ -42,10 +42,10 @@ namespace Tiriryarai.Server
 	/// and outgoing responses before forwarding them to their destination. To use the
 	/// proxy, it's root CA must be installed in the client.
 	/// </summary>
-    class HttpsMitmProxy
-    {
+	class HttpsMitmProxy
+	{
 		private IPAddress ip;
-        private readonly ushort port;
+		private readonly ushort port;
 
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> handlers;
 
@@ -54,7 +54,7 @@ namespace Tiriryarai.Server
 
 		private HttpsMitmProxyCache cache;
 
-        private IManInTheMiddle mitm;
+		private IManInTheMiddle mitm;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Server.HttpsMitmProxy"/> class.
@@ -66,7 +66,7 @@ namespace Tiriryarai.Server
 		/// <param name="mitm">A man-in-the-middle handler that will receive incomming requests and outgoing responses
 		/// to tamper with them.</param>
 		public HttpsMitmProxy(IPAddress ip, ushort port, string configDir, IManInTheMiddle mitm)
-        {
+		{
 			logDir = Path.Combine(configDir, "logs");
 			Directory.CreateDirectory(logDir);
 			handlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
@@ -77,18 +77,18 @@ namespace Tiriryarai.Server
 				{Resources.OCSP_PATH, OCSP},
 				{Resources.CRL_PATH, CRL}
 			};
-            X509CertificateUrls urls = new X509CertificateUrls(
-                "http://" + ip + ":" + port + Resources.CA_ISSUER_PATH,
-                "http://" + ip + ":" + port + Resources.OCSP_PATH,
-                "http://" + ip + ":" + port + Resources.CRL_PATH
-            );
-            cache = new HttpsMitmProxyCache(configDir, 500, 60000, urls);
+			X509CertificateUrls urls = new X509CertificateUrls(
+				"http://" + ip + ":" + port + Resources.CA_ISSUER_PATH,
+				"http://" + ip + ":" + port + Resources.OCSP_PATH,
+				"http://" + ip + ":" + port + Resources.CRL_PATH
+			);
+			cache = new HttpsMitmProxyCache(configDir, 500, 60000, urls);
 			logMutex = new ConcurrentDictionary<string, byte>();
 
-            this.ip = ip;
-            this.port = port;
-            this.mitm = mitm;
-        }
+			this.ip = ip;
+			this.port = port;
+			this.mitm = mitm;
+		}
 
 		/* HTTP request handler callbacks */
 
@@ -140,89 +140,89 @@ namespace Tiriryarai.Server
 		/// Start the server and listens to incomming requests.
 		/// </summary>
 		public void Start()
-        {
-            TcpListener listener = new TcpListener(ip, port);
-            listener.Start();
-            Console.WriteLine("Listening for connections on https://*:" + port + "/");
-            while (true)
-            {
-                TcpClient client = listener.AcceptTcpClient();
-                Task.Run(() => ProcessClient(client));
-            }
-        }
+		{
+			TcpListener listener = new TcpListener(ip, port);
+			listener.Start();
+			Console.WriteLine("Listening for connections on https://*:" + port + "/");
+			while (true)
+			{
+				TcpClient client = listener.AcceptTcpClient();
+				Task.Run(() => ProcessClient(client));
+			}
+		}
 
-        private void ProcessClient(TcpClient client)
-        {
-            HttpRequest req;
-            HttpResponse resp;
-            HttpMessage http;
-            try
-            {
+		private void ProcessClient(TcpClient client)
+		{
+			HttpRequest req;
+			HttpResponse resp;
+			HttpMessage http;
+			try
+			{
 				Stream stream = client.GetStream();
 
-                req = HttpRequest.FromStream(stream);
-                if (req.Method == Method.CONNECT)
-                {
+				req = HttpRequest.FromStream(stream);
+				if (req.Method == Method.CONNECT)
+				{
 					string host = req.Uri;
-                    if (!mitm.Block(host))
-                    {
-                        resp = new HttpResponse(200, null, null, "Connection Established");
-                        resp.ToStream(stream);
+					if (!mitm.Block(host))
+					{
+						resp = new HttpResponse(200, null, null, "Connection Established");
+						resp.ToStream(stream);
 
-                        X509Certificate2 cert = cache.GetCertificate(host);
+						X509Certificate2 cert = cache.GetCertificate(host);
 
-                        SslStream sslStream = new SslStream(stream, false);
-                        sslStream.AuthenticateAsServer(cert);
+						SslStream sslStream = new SslStream(stream, false);
+						sslStream.AuthenticateAsServer(cert);
 
-                        req = HttpRequest.FromStream(sslStream);
-                        Log(req.Host, "INCOMMING REQUEST", req);
+						req = HttpRequest.FromStream(sslStream);
+						Log(req.Host, "INCOMMING REQUEST", req);
 
-                        if (!IsDestinedToMitm(req))
-                        {
-                            Console.WriteLine("\n--------------------\n" + req.Method + " https://" + req.Host + req.Uri);
+						if (!IsDestinedToMitm(req))
+						{
+							Console.WriteLine("\n--------------------\n" + req.Method + " https://" + req.Host + req.Uri);
 
-                            http = mitm.HandleRequest(req);
-                            if (http is HttpRequest modified)
-                            {
-                                //Log(req.Host, "MODIFIED REQUEST", modified);
-                                resp = new HttpsClient(req.Host).Send(modified);
-                                resp = mitm.HandleResponse(resp, req);
-                            }
-                            else if (http is HttpResponse intercepted)
-                            {
-                                //Log(req.Host, "CUSTOM RESPONSE", intercepted);
-                                resp = intercepted;
-                            }
-                            else
-                            {
-                                throw new Exception("Invalid message type");
-                            }
-                            Log(req.Host, "OUTGOING RESPONSE", resp);
-                            resp.ToStream(sslStream);
+							http = mitm.HandleRequest(req);
+							if (http is HttpRequest modified)
+							{
+								//Log(req.Host, "MODIFIED REQUEST", modified);
+								resp = new HttpsClient(req.Host).Send(modified);
+								resp = mitm.HandleResponse(resp, req);
+							}
+							else if (http is HttpResponse intercepted)
+							{
+								//Log(req.Host, "CUSTOM RESPONSE", intercepted);
+								resp = intercepted;
+							}
+							else
+							{
+								throw new Exception("Invalid message type");
+							}
+							Log(req.Host, "OUTGOING RESPONSE", resp);
+							resp.ToStream(sslStream);
 
-                            sslStream.Close();
-                            client.Close();
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        resp = new HttpResponse(502);
-                        resp.ToStream(stream);
-                        client.Close();
-                        return;
-                    }
-                }
+							sslStream.Close();
+							client.Close();
+							return;
+						}
+					}
+					else
+					{
+						resp = new HttpResponse(502);
+						resp.ToStream(stream);
+						client.Close();
+						return;
+					}
+				}
 				resp = HomePage(req);
 				resp.ToStream(stream);
 				client.Close();
 			}
-            catch (Exception e)
-            {
-                // TODO Need an appropriate method for how and when to log exceptions
-                Console.WriteLine(e.Message);
-            }
-        }
+			catch (Exception e)
+			{
+				// TODO Need an appropriate method for how and when to log exceptions
+				Console.WriteLine(e.Message);
+			}
+		}
 
 		private bool IsDestinedToMitm(HttpRequest req)
 		{
@@ -272,6 +272,6 @@ namespace Tiriryarai.Server
 			{
 				logMutex.TryRemove(filename, out _);
 			}
-        }
+		}
 	}
 }

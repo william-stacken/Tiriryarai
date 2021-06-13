@@ -26,13 +26,13 @@ namespace Tiriryarai.Server
 	/// to tamper with them automatically.
 	/// </summary>
 	interface IManInTheMiddle
-    {
-        /// <summary>
-        /// Returns a <c>bool</c> indicating whether the given host is blocked.
-        /// </summary>
-        /// <returns><code>true</code> if the host should be blocked; otherwise, <code>false</code>.</returns>
-        /// <param name="hostname">The name of the host.</param>
-        bool Block(string hostname);
+	{
+		/// <summary>
+		/// Returns a <c>bool</c> indicating whether the given host is blocked.
+		/// </summary>
+		/// <returns><code>true</code> if the host should be blocked; otherwise, <code>false</code>.</returns>
+		/// <param name="hostname">The name of the host.</param>
+		bool Block(string hostname);
 
 		/// <summary>
 		/// Handles a request and returns either a modified request if it is to be proxied, or a response otherwise.
@@ -50,13 +50,13 @@ namespace Tiriryarai.Server
 		/// <param name="req">The request that resulted in this response.</param>
 		HttpResponse HandleResponse(HttpResponse resp, HttpRequest req);
 
-        /// <summary>
-        /// Handles a request destined to the man-in-the-middle handler and returnes a custom
+		/// <summary>
+		/// Handles a request destined to the man-in-the-middle handler and returnes a custom
 		/// response.
 		/// <example>This response could for example be a configuration GUI.</example>
-        /// </summary>
-        /// <returns>The custom response.</returns>
-        /// <param name="req">The request to handle.</param>
-        HttpResponse HomePage(HttpRequest req);
-    }
+		/// </summary>
+		/// <returns>The custom response.</returns>
+		/// <param name="req">The request to handle.</param>
+		HttpResponse HomePage(HttpRequest req);
+	}
 }

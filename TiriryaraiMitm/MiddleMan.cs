@@ -25,35 +25,35 @@ using Tiriryarai.Server;
 
 namespace TiriryaraiMitm
 {
-    public class MiddleMan : IManInTheMiddle
-    {
-        public bool Block(string hostname)
-        {
-            // Block all hostnames containing "example"
-            return new Regex("^.*example.*$").IsMatch(hostname);
-        }
+	public class MiddleMan : IManInTheMiddle
+	{
+		public bool Block(string hostname)
+		{
+			// Block all hostnames containing "example"
+			return new Regex("^.*example.*$").IsMatch(hostname);
+		}
 
-        public HttpMessage HandleRequest(HttpRequest req)
-        {
-            // Optionally tamper with request, or intercept it
-            // and return a response instead.
-            return req;
-        }
+		public HttpMessage HandleRequest(HttpRequest req)
+		{
+			// Optionally tamper with request, or intercept it
+			// and return a response instead.
+			return req;
+		}
 
-        public HttpResponse HandleResponse(HttpResponse resp, HttpRequest req)
-        {
-            // Optionally tamper with response.
-            return resp;
-        }
+		public HttpResponse HandleResponse(HttpResponse resp, HttpRequest req)
+		{
+			// Optionally tamper with response.
+			return resp;
+		}
 
-        public HttpResponse HomePage(HttpRequest req)
-        {
-            HttpResponse resp = new HttpResponse(200);
-            resp.SetHeader("Content-Type", "text/html");
-            resp.SetBodyAndLength(Encoding.Default.GetBytes(
-                "<h1>Hello World!</h1><p>This was sent from the proxy!</p>"
-            ));
-            return resp;
-        }
-    }
+		public HttpResponse HomePage(HttpRequest req)
+		{
+			HttpResponse resp = new HttpResponse(200);
+			resp.SetHeader("Content-Type", "text/html");
+			resp.SetBodyAndLength(Encoding.Default.GetBytes(
+				"<h1>Hello World!</h1><p>This was sent from the proxy!</p>"
+			));
+			return resp;
+		}
+	}
 }

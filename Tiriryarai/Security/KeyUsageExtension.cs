@@ -46,13 +46,13 @@ namespace Tiriryarai.Crypto
 	 * KeyUsage ::= BIT STRING {
 	 *	digitalSignature        (0),
 	 * 	nonRepudiation          (1),
-	 * 	keyEncipherment         (2),
+	 * 	keyEncipherment	        (2),
 	 * 	dataEncipherment        (3),
 	 * 	keyAgreement            (4),
 	 * 	keyCertSign             (5),
 	 * 	cRLSign                 (6),
 	 * 	encipherOnly            (7),
-	 * 	decipherOnly            (8) 
+	 * 	decipherOnly            (8)
 	 * }
 	 */
 	// note: because nothing is simple in ASN.1 bits are reversed
@@ -178,7 +178,7 @@ namespace Tiriryarai.Crypto
 			{
 				if (sb.Length > 0)
 					sb.Append(separator);
-				sb.Append("Encipher Only ");    // ???
+				sb.Append("Encipher Only ");	// ???
 			}
 			if (Support(KeyUsages.decipherOnly))
 			{
