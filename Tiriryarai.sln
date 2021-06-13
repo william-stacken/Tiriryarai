@@ -5,7 +5,7 @@ Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Tiriryarai", "Tiriryarai\Ti
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UtawareImposter", "UtawareImposter\UtawareImposter.csproj", "{A87459BC-BF6B-4179-A7E2-FC065C17290E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TiriryaraiMitm", "MiddleMan\TiriryaraiMitm.csproj", "{D593687D-0151-4305-B263-522A52EA4478}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TiriryaraiMitm", "TiriryaraiMitm\TiriryaraiMitm.csproj", "{D593687D-0151-4305-B263-522A52EA4478}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
