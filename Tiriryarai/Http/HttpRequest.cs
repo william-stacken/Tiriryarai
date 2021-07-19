@@ -19,6 +19,7 @@
 
 using System;
 using System.IO;
+using System.Text;
 using System.Collections.Generic;
 
 namespace Tiriryarai.Http
@@ -126,16 +127,27 @@ namespace Tiriryarai.Http
 
 			string[] reqLineParts = reqLine.Split(' ');
 			if (reqLineParts.Length < 3)
-				throw new Exception("Bad Request Line");
+				throw new Exception("Bad Request Line: " + reqLine);
 
 			if (!Enum.TryParse(reqLineParts[0], false, out Method method))
-				throw new Exception("Bad Request Line");
+				throw new Exception("Bad Request Line: " + reqLine);
 			uri = reqLineParts[1];
 			if (!reqLineParts[2].Split('/')[0].Equals("HTTP"))
-				throw new Exception("Bad Request Line");
+				throw new Exception("Bad Request Line: " + reqLine);
 
 			http = HttpMessage.FromStream(stream, hasBody);
 			return new HttpRequest(method, uri, http.Headers, http.Body);
+		}
+
+		/// <summary>
+		/// Writes an <see cref="T:Tiriryarai.Http.HttpRequest"/> instance to a stream.
+		/// </summary>
+		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpRequest"/> to.</param>
+		public override void ToStream(Stream stream)
+		{
+			byte[] enc = Encoding.Default.GetBytes(RequestLine());
+			stream.Write(enc, 0, enc.Length);
+			base.ToStream(stream);
 		}
 
 		/// <summary>
@@ -155,7 +167,12 @@ namespace Tiriryarai.Http
 		/// <returns>A <see cref="T:System.String"/> that represents the current <see cref="T:Tiriryarai.Http.HttpRequest"/>.</returns>
 		public override string ToString()
 		{
-			return Method + " " + Uri + " HTTP/1.1\r\n" + base.ToString();
+			return RequestLine() + base.ToString();
+		}
+
+		private string RequestLine()
+		{
+			return Method + " " + Uri + " HTTP/1.1\r\n";
 		}
 	}
 }

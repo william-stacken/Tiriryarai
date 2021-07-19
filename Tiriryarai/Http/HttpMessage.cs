@@ -220,15 +220,24 @@ namespace Tiriryarai.Http
 			return hasBody ? ReadMessageBody(http, stream) : http;
 		}
 
-		public void ToStream(Stream stream)
+		public virtual void ToStream(Stream stream)
 		{
-			byte[] enc = Encoding.Default.GetBytes(ToString());
+			byte[] enc = Encoding.Default.GetBytes(HeadersToString());
+
 			stream.Write(enc, 0, enc.Length);
 			stream.Write(Body, 0, Body.Length);
 			stream.Flush();
 		}
 
 		public override string ToString()
+		{
+			//char[] charBody = new char[Body.Length / sizeof(char)];
+
+			//Buffer.BlockCopy(Body, 0, charBody, 0, Body.Length);
+			return HeadersToString() + /*new string(charBody)*/ Encoding.Default.GetString(Body);
+		}
+
+		protected string HeadersToString()
 		{
 			StringBuilder builder = new StringBuilder();
 			foreach (KeyValuePair<string, string[]> header in Headers)

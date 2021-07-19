@@ -22,36 +22,92 @@ using System.Text.RegularExpressions;
 
 using Tiriryarai.Http;
 using Tiriryarai.Server;
+using Tiriryarai.Util;
 
 namespace TiriryaraiMitm
 {
 	public class MiddleMan : IManInTheMiddle
 	{
+		private bool intercept;
+		private Logger logger;
+
+		public MiddleMan()
+		{
+			intercept = false;
+			logger = Logger.GetSingleton();
+		}
+
 		public bool Block(string hostname)
 		{
-			// Block all hostnames containing "example"
-			return new Regex("^.*example.*$").IsMatch(hostname);
+			// Block all hostnames containing "hacker"
+			return new Regex("^.*hacker.*$").IsMatch(hostname);
 		}
 
 		public HttpMessage HandleRequest(HttpRequest req)
 		{
-			// Optionally tamper with request, or intercept it
-			// and return a response instead.
+			if (intercept)
+			{
+				// Intercept the request and return a response instead
+				HttpResponse resp = new HttpResponse(200);
+				resp.SetHeader("Content-Type", "text/html");
+				resp.SetBodyAndLength(Encoding.Default.GetBytes(
+					"<p>Your request was intercepted and not sent to the host!</p>"
+				));
+				return resp;
+			}
+
+			// Add header if the request was destined to example.org
+			if ("example.org".Equals(req.Host))
+			{
+				req.SetHeader("X-To-Example", "true");
+				logger.Log(3, req.Host, "ADDED A HEADER", req);
+			}
 			return req;
 		}
 
 		public HttpResponse HandleResponse(HttpResponse resp, HttpRequest req)
 		{
-			// Optionally tamper with response.
+			// Add header if the request was destined to example.org
+			if ("example.org".Equals(req.Host))
+			{
+				resp.SetHeader("X-From-Example", "true");
+				logger.Log(3, req.Host, "ADDED A HEADER", resp);
+			}
 			return resp;
 		}
 
 		public HttpResponse HomePage(HttpRequest req)
 		{
+			// Display a simple web page for downloading the root CA certificate
+			// and set a boolean to intercept requests
 			HttpResponse resp = new HttpResponse(200);
+			string msg = "";
+			string path = req.Path;
+			string[] contentType = req.GetHeader("Content-Type");
+			if (path.Equals("/save") && req.Method == Method.POST &&
+				contentType.Length > 0 && "application/x-www-form-urlencoded".Equals(contentType[0]))
+			{
+				intercept = "on".Equals(req.GetBodyParam("intercept"));
+				msg = "<p style=\"color:#00FF00\";>Saved!</p>";
+			}
 			resp.SetHeader("Content-Type", "text/html");
-			resp.SetBodyAndLength(Encoding.Default.GetBytes(
-				"<h1>Hello World!</h1><p>This was sent from the proxy!</p>"
+			resp.SetBodyAndLength(Encoding.Default.GetBytes(string.Format(
+				"<!DOCTYPE html>" +
+				"<html>" +
+				  "<head>" +
+					"<title>Tiriryarai</title>" +
+				  "</head>" +
+				  "<body>" +
+					"<p>Welcome to Tiriryarai!<p>" +
+					"<a href=\"/cert\"><button>CA Certificate</button></a><br>" +
+					"{0}" +
+					"<form method=\"post\" action=\"/save\">" +
+					  "<input type=\"checkbox\" name=\"intercept\" id=\"intercept\" {1}/>" +
+					  "<label for=\"intercept\">Intercept</label>" +
+					  "<input type=\"submit\" name=\"submit\" value=\"Save\"/>" +
+					"</form>" +
+				  "</body>" +
+				"</html>", msg, intercept ? "checked" : "")
 			));
 			return resp;
 		}

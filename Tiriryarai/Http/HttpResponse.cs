@@ -19,6 +19,7 @@
 
 using System;
 using System.IO;
+using System.Text;
 using System.Collections.Generic;
 
 namespace Tiriryarai.Http
@@ -107,9 +108,9 @@ namespace Tiriryarai.Http
 			int type = status / 100 - 1;
 			int id = status % 100;
 			if (type < 0 || type >= statusMsg.Length)
-				throw new ArgumentException("Bad status");
+				throw new ArgumentException("Bad status: " + status);
 			if (id >= statusMsg[type].Length || statusMsg[type][id] == null)
-				throw new ArgumentException("Bad status");
+				throw new ArgumentException("Bad status: " + status);
 			Status = status;
 			StatusMessage = statusMessage;
 		}
@@ -139,15 +140,26 @@ namespace Tiriryarai.Http
 
 			string[] respLineParts = respLine.Split(' ');
 			if (respLineParts.Length < 3)
-				throw new Exception("Bad Response Line");
+				throw new Exception("Bad Response Line: " + respLine);
 
 			if (!respLineParts[0].Split('/')[0].Equals("HTTP"))
-				throw new Exception("Bad Response Line");
+				throw new Exception("Bad Response Line: " + respLine);
 			if (!int.TryParse(respLineParts[1], out int status))
-				throw new Exception("Bad Response Line");
+				throw new Exception("Bad Response Line: " + respLine);
 
 			http = HttpMessage.FromStream(stream, hasBody && status >= 200 && status != 204 && status != 304);
 			return new HttpResponse(status, http.Headers, http.Body);
+		}
+
+		/// <summary>
+		/// Writes an <see cref="T:Tiriryarai.Http.HttpResponse"/> instance to a stream.
+		/// </summary>
+		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpResponse"/> to.</param>
+		public override void ToStream(Stream stream)
+		{
+			byte[] enc = Encoding.Default.GetBytes(ResponseLine());
+			stream.Write(enc, 0, enc.Length);
+			base.ToStream(stream);
 		}
 
 		/// <summary>
@@ -167,7 +179,12 @@ namespace Tiriryarai.Http
 		/// <returns>A <see cref="T:System.String"/> that represents the current <see cref="T:Tiriryarai.Http.HttpResponse"/>.</returns>
 		public override string ToString()
 		{
-			return "HTTP/1.1 " + Status + " " + (StatusMessage ?? statusMsg[Status / 100 - 1][Status % 100]) + "\r\n" + base.ToString();
+			return ResponseLine() + base.ToString();
+		}
+
+		private string ResponseLine()
+		{
+			return "HTTP/1.1 " + Status + " " + (StatusMessage ?? statusMsg[Status / 100 - 1][Status % 100]) + "\r\n";
 		}
 	}
 }

@@ -21,10 +21,8 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.Security;
-using System.Text;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
-using System.Threading;
+
 using System.Threading.Tasks;
 using System.Security.Cryptography.X509Certificates;
 using System.IO;
@@ -49,26 +47,41 @@ namespace Tiriryarai.Server
 
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> handlers;
 
-		private readonly string logDir;
-		private ConcurrentDictionary<string, byte> logMutex;
-
 		private HttpsMitmProxyCache cache;
-
 		private IManInTheMiddle mitm;
+		private Logger logger;
+
+		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port) :
+		    this(mitm, port, DefaultIPAddress, DefaultConfigDir, DefaultVerbosity) { }
+		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, IPAddress ip) :
+		    this(mitm, port, ip, DefaultConfigDir, DefaultVerbosity) { }
+		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, string configDir) :
+		    this(mitm, port, DefaultIPAddress, configDir, DefaultVerbosity) { }
+		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, uint logVerbosity) :
+		    this(mitm, port, DefaultIPAddress, DefaultConfigDir, logVerbosity) { }
+		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, IPAddress ip, string configDir) :
+		    this(mitm, port, ip, configDir, DefaultVerbosity) { }
+		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, IPAddress ip, uint logVerbosity) :
+		    this(mitm, port, ip, DefaultConfigDir, logVerbosity) { }
+		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, string configDir, uint logVerbosity) :
+		    this(mitm, port, DefaultIPAddress, configDir, logVerbosity) { }
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Server.HttpsMitmProxy"/> class.
 		/// Does not start the server.
 		/// </summary>
-		/// <param name="ip">The IP address the server will listen on.</param>
-		/// <param name="port">The port the server will listen on.</param>
-		/// <param name="configDir">A directory where certificates, server configuration, and log files will be stored.</param>
 		/// <param name="mitm">A man-in-the-middle handler that will receive incomming requests and outgoing responses
 		/// to tamper with them.</param>
-		public HttpsMitmProxy(IPAddress ip, ushort port, string configDir, IManInTheMiddle mitm)
+		/// <param name="port">The port the server will listen on.</param>
+		/// <param name="ip">The IP address the server will listen on.</param>
+		/// <param name="configDir">A directory where certificates, server configuration, and log files will be stored.</param>
+		/// <param name="logVerbosity">The higher this value is, the more information will be logged.</param>
+		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, IPAddress ip, string configDir, uint logVerbosity)
 		{
-			logDir = Path.Combine(configDir, "logs");
-			Directory.CreateDirectory(logDir);
+			Directory.CreateDirectory(configDir);
+			string logDir = Path.Combine(configDir, "logs");
+			logger = Logger.GetSingleton();
+			logger.Initialize(logDir, logVerbosity);
 			handlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
 			{
 				{"/favicon.ico", Favicon},
@@ -83,7 +96,6 @@ namespace Tiriryarai.Server
 				"http://" + ip + ":" + port + Resources.CRL_PATH
 			);
 			cache = new HttpsMitmProxyCache(configDir, 500, 60000, urls);
-			logMutex = new ConcurrentDictionary<string, byte>();
 
 			this.ip = ip;
 			this.port = port;
@@ -97,6 +109,7 @@ namespace Tiriryarai.Server
 		{
 			resp.SetHeader("Content-Type", "image/x-icon");
 			resp.SetBodyAndLength(Resources.Get("favicon.ico"));
+			logger.Log(10, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 		}
 
 		private void Cert(HttpRequest req, HttpResponse resp)
@@ -104,36 +117,32 @@ namespace Tiriryarai.Server
 			resp.SetHeader("Content-Type", "application/octet-stream");
 			resp.SetHeader("Content-Disposition", "attachment; filename=Tiriryarai.der");
 			resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
+			logger.Log(9, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 		}
 
 		private void CaIssuer(HttpRequest req, HttpResponse resp)
 		{
-			Console.WriteLine("\n----------------------------\n" + req);
 			resp.SetHeader("Content-Type", "application/pkix-cert");
 			resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
-			Log(req.Host, "OUTGOING INTERNAL RESPONSE", resp);
+			logger.Log(9, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 		}
 
 		private void OCSP(HttpRequest req, HttpResponse resp)
 		{
-			Console.WriteLine("\n----------------------------\n" + req);
-
 			X509OCSPResponse ocspResp = cache.GetOCSPResponse(req);
 			resp.SetHeader("Content-Type", "application/ocsp-response");
 			resp.SetBodyAndLength(ocspResp.RawData);
-			Log(req.Host, "OUTGOING INTERNAL RESPONSE", resp);
+			logger.Log(8, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 		}
 
 		private void CRL(HttpRequest req, HttpResponse resp)
 		{
-			Console.WriteLine("\n----------------------------\n" + req);
-
 			X509Crl crl = cache.GetCrl();
 			resp.SetHeader("Content-Type", "application/pkix-crl");
 			resp.SetHeader("Expires", crl.ThisUpdate.ToString("r"));
 			resp.SetHeader("Last-Modified", crl.NextUpdate.ToString("r"));
 			resp.SetBodyAndLength(crl.RawData);
-			Log(req.Host, "OUTGOING INTERNAL RESPONSE", resp);
+			logger.Log(8, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 		}
 
 		/// <summary>
@@ -143,7 +152,7 @@ namespace Tiriryarai.Server
 		{
 			TcpListener listener = new TcpListener(ip, port);
 			listener.Start();
-			Console.WriteLine("Listening for connections on https://*:" + port + "/");
+			Console.WriteLine("Listening for connections on https://" + ip + ":" + port + "/");
 			while (true)
 			{
 				TcpClient client = listener.AcceptTcpClient();
@@ -164,18 +173,19 @@ namespace Tiriryarai.Server
 				if (req.Method == Method.CONNECT)
 				{
 					string host = req.Uri;
+					resp = new HttpResponse(200, null, null, "Connection Established");
+					resp.ToStream(stream);
+
+					X509Certificate2 cert = cache.GetCertificate(host);
+
+					SslStream sslStream = new SslStream(stream, false);
+					sslStream.AuthenticateAsServer(cert);
+
+					req = HttpRequest.FromStream(sslStream);
+
 					if (!mitm.Block(host))
 					{
-						resp = new HttpResponse(200, null, null, "Connection Established");
-						resp.ToStream(stream);
-
-						X509Certificate2 cert = cache.GetCertificate(host);
-
-						SslStream sslStream = new SslStream(stream, false);
-						sslStream.AuthenticateAsServer(cert);
-
-						req = HttpRequest.FromStream(sslStream);
-						Log(req.Host, "INCOMMING REQUEST", req);
+						logger.Log(6, req.Host, "RECEIVED REQUEST", req);
 
 						if (!IsDestinedToMitm(req))
 						{
@@ -184,31 +194,33 @@ namespace Tiriryarai.Server
 							http = mitm.HandleRequest(req);
 							if (http is HttpRequest modified)
 							{
-								//Log(req.Host, "MODIFIED REQUEST", modified);
+								logger.Log(7, req.Host, "MODIFIED REQUEST", modified);
 								resp = new HttpsClient(req.Host).Send(modified);
+								logger.Log(6, req.Host, "RECEIVED RESPONSE", resp);
 								resp = mitm.HandleResponse(resp, req);
+								logger.Log(7, req.Host, "MODIFIED RESPONSE", resp);
 							}
 							else if (http is HttpResponse intercepted)
 							{
-								//Log(req.Host, "CUSTOM RESPONSE", intercepted);
+								logger.Log(6, req.Host, "CUSTOM RESPONSE", intercepted);
 								resp = intercepted;
 							}
 							else
 							{
 								throw new Exception("Invalid message type");
 							}
-							Log(req.Host, "OUTGOING RESPONSE", resp);
 							resp.ToStream(sslStream);
-
 							sslStream.Close();
 							client.Close();
 							return;
 						}
 					}
-					else
+					else // Host is blocked, send bad gateway
 					{
+						logger.Log(6, req.Host, "BLOCKED REQUEST", req);
 						resp = new HttpResponse(502);
-						resp.ToStream(stream);
+						resp.ToStream(sslStream);
+						sslStream.Close();
 						client.Close();
 						return;
 					}
@@ -219,8 +231,7 @@ namespace Tiriryarai.Server
 			}
 			catch (Exception e)
 			{
-				// TODO Need an appropriate method for how and when to log exceptions
-				Console.WriteLine(e.Message);
+				logger.LogException(e);
 			}
 		}
 
@@ -243,35 +254,36 @@ namespace Tiriryarai.Server
 			return mitm.HomePage(req);
 		}
 
-		private void Log(string filename, string head, HttpMessage http)
+		public static IPAddress DefaultIPAddress
 		{
-			int attempts = 0;
-			while (!logMutex.TryAdd(filename, 0))
+			get
 			{
-				if (++attempts > 5)
+				IPHostEntry host = Dns.GetHostEntry(Dns.GetHostName());
+				foreach (IPAddress ipa in host.AddressList)
 				{
-					Console.WriteLine("Warning: Request to log HttpMessage timed out.");
-					return;
+					if (ipa.AddressFamily == AddressFamily.InterNetwork)
+					{
+						return ipa;
+					}
 				}
-				Thread.Sleep(100);
+				throw new Exception("The system has no IPv4 address to use by default.");
 			}
-			try
+		}
+
+		public static string DefaultConfigDir
+		{
+			get
 			{
-				using (var s = new FileStream(Path.Combine(logDir, filename + ".log"), FileMode.Append))
-				{
-					byte[] header = Encoding.UTF8.GetBytes(
-						$"################ {head} {DateTime.Now.ToLongTimeString()} {DateTime.Now.ToLongDateString()} ################\n"
-					);
-					byte[] footer = Encoding.UTF8.GetBytes("\n\n");
-					s.Write(header, 0, header.Length);
-					http.ToStream(s);
-					s.Write(footer, 0, footer.Length);
-				}
+				return Path.Combine(
+					Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+					"Tiriryarai"
+				);
 			}
-			finally
-			{
-				logMutex.TryRemove(filename, out _);
-			}
+		}
+
+		public static uint DefaultVerbosity
+		{
+			get { return 6; }
 		}
 	}
 }

@@ -18,7 +18,6 @@
 //
 
 using System;
-using System.IO;
 using System.Net;
 using System.Net.Sockets;
 
@@ -35,27 +34,37 @@ namespace TiriryaraiMitm
 		/// <summary>
 		/// The entry point of the program, where the program control starts and ends.
 		/// </summary>
-		/// <param name="args">The command-line arguments. The program takes one argument:
-		/// The port number where the HTTPS man-in-the-middle proxy will be hosted.
-		/// It is <c>8081</c> by default.</param>
+		/// <param name="args">The command-line arguments. The program takes two arguments:
+		/// The port number where the HTTPS man-in-the-middle proxy will be hosted, <c>8081</c>
+		/// by default, and the log verbosity, with a default verbosity if not provided.</param>
 		static void Main(string[] args)
 		{
 			HttpsMitmProxy proxy = null;
-			string configDir = Path.Combine(
-				Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Tiriryarai"
-			);
-			Directory.CreateDirectory(configDir);
 			MiddleMan mitm = new MiddleMan();
-			IPAddress ip = GetLocalIPAddress();
 			ushort port = 8081;
-			if (args.Length > 0 && !ushort.TryParse(args[1], out port))
+			if (args.Length > 1 && !ushort.TryParse(args[1], out port))
 			{
 				Console.WriteLine(args[1] + " is not a valid port number!");
 				Environment.Exit(-1);
 			}
 			try
 			{
-				proxy = new HttpsMitmProxy(ip, port, configDir, mitm);
+				if (args.Length > 2)
+				{
+					if (uint.TryParse(args[2], out uint verbosity))
+					{
+						proxy = new HttpsMitmProxy(mitm, port, verbosity);
+					}
+					else
+					{
+						Console.WriteLine(args[2] + " is not a valid log verbosity!");
+						Environment.Exit(-2);
+					}
+				}
+				else
+				{
+					proxy = new HttpsMitmProxy(mitm, port);
+				}
 			}
 			catch (Exception e)
 			{
@@ -64,19 +73,6 @@ namespace TiriryaraiMitm
 			}
 			proxy.Start();
 			Console.WriteLine("Server shut down...");
-		}
-
-		private static IPAddress GetLocalIPAddress()
-		{
-			IPHostEntry host = Dns.GetHostEntry(Dns.GetHostName());
-			foreach (IPAddress ipa in host.AddressList)
-			{
-				if (ipa.AddressFamily == AddressFamily.InterNetwork)
-				{
-					return ipa;
-				}
-			}
-			throw new Exception("Could not start, the system has no IPv4 address.");
 		}
 	}
 }
