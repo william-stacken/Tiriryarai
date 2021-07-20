@@ -35,7 +35,7 @@ namespace Tiriryarai.Util
 		private IPAddress ip;
 
 		/// <summary>
-		/// Gets or sets the IP address the server will listen on.
+		/// Gets or sets the IP address the server is hosted on.
 		/// </summary>
 		/// <value>The IP address.</value>
 		public IPAddress IP
