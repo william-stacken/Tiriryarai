@@ -96,18 +96,18 @@ namespace TiriryaraiMitm
 				"<html>" +
 				  "<head>" +
 					"<title>Tiriryarai</title>" +
+					"<meta charset=\"utf-8\"/>" +
 				  "</head>" +
 				  "<body>" +
-					"<p>Welcome to Tiriryarai!<p>" +
-					"<a href=\"/cert\"><button>CA Certificate</button></a><br>" +
-					"{0}" +
+					"<h1>Custom MitM configuration page</h1>" +
 					"<form method=\"post\" action=\"/save\">" +
-					  "<input type=\"checkbox\" name=\"intercept\" id=\"intercept\" {1}/>" +
-					  "<label for=\"intercept\">Intercept</label>" +
+					  "<input type=\"checkbox\" name=\"intercept\" id=\"intercept\" {0}/>" +
+					  "<label for=\"intercept\">Intercept</label><br><br>" +
 					  "<input type=\"submit\" name=\"submit\" value=\"Save\"/>" +
 					"</form>" +
+					"{1}" +
 				  "</body>" +
-				"</html>", msg, intercept ? "checked" : "")
+				"</html>", intercept ? "checked" : "", msg)
 			));
 			return resp;
 		}

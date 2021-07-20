@@ -154,6 +154,30 @@ namespace Tiriryarai.Http
 		}
 
 		/// <summary>
+		/// Checks if the message has HTTP basic authentication matching the
+		/// given username and password. Assumes valid username and password.
+		/// </summary>
+		/// <returns><c>true</c>, if authenticated, <c>false</c> otherwise.</returns>
+		/// <param name="user">The given username.</param>
+		/// <param name="pass">The given password.</param>
+		public bool BasicAuthenticated(string user, string pass)
+		{
+			string[] auth;
+			string[] authArr = GetHeader("Authorization");
+			if (authArr != null && authArr.Length > 0)
+			{
+				auth = authArr[0].Split(' ');
+				if (auth != null && auth.Length > 1 && "Basic".Equals(auth[0]))
+				{
+					return Convert.ToBase64String(
+						Encoding.Default.GetBytes(user + ":" + pass)
+					).Equals(auth[1]);
+				}
+			}
+			return false;
+		}
+
+		/// <summary>
 		/// Treats the entity body as form-encoded a string and retrives the value of a given parameter.
 		/// </summary>
 		/// <returns>The value of the parameter if it exists; otherwise, <c>null</c>.</returns>

@@ -52,8 +52,11 @@ namespace Tiriryarai.Util
 		private static readonly Random rng = new Random();
 
 		private MemoryCache cache;
+		private readonly string mitmHost;
+
 		private readonly string rootCA;
 		private readonly string ocspCA;
+		private readonly string mitmCert;
 		private readonly X509CertificateUrls urls;
 
 		private ConcurrentDictionary<object, byte> mutex;
@@ -61,17 +64,20 @@ namespace Tiriryarai.Util
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Util.HttpsMitmProxyCache"/> class.
 		/// </summary>
-		/// <param name="storeDir">Path to directory where the root CA and OCSP CA certificate PKCS12
-		/// files will be stored.</param>
+		/// <param name="mitmHost">Hostname of the MitM proxy.</param>
+		/// <param name="storeDir">Path to directory where the PKCS12 files will be stored.</param>
 		/// <param name="mbMemoryLimit">Memory limit imposed on the cache in megabytes. If this limit
 		/// is breached, cache entries will be expelled.</param>
-		/// <param name="pollingInterval">The polling interval at which to check tat the cache size
+		/// <param name="pollingInterval">The polling interval at which to check that the cache size
 		/// has not breached the limit.</param>
 		/// <param name="urls">An immutable collection of URLs used when generating certificates.</param>
-		public HttpsMitmProxyCache(string storeDir, int mbMemoryLimit, int pollingInterval, X509CertificateUrls urls)
+		public HttpsMitmProxyCache(string mitmHost, string storeDir, int mbMemoryLimit, int pollingInterval, X509CertificateUrls urls)
 		{
+			this.mitmHost = mitmHost;
 			rootCA = Path.Combine(storeDir, "-RootCA-.pfx");
 			ocspCA = Path.Combine(storeDir, "-OcspCA-.pfx");
+			mitmCert = Path.Combine(storeDir, "-MitM-.pfx");
+
 			this.urls = urls;
 
 			mutex = new ConcurrentDictionary<object, byte>();
@@ -80,37 +86,28 @@ namespace Tiriryarai.Util
 				{"PollingInterval", TimeSpan.FromMilliseconds(pollingInterval).ToString()},
 			});
 
-			X509Certificate2Collection collection;
-			if (!File.Exists(rootCA))
-			{
-				AddOrGetExisting(rootCA, CreateRootCertFile, val => (val as X509Certificate2).NotAfter);
-			}
-			else
-			{
-				collection = new X509Certificate2Collection();
-				collection.Import(rootCA, Resources.PFX_PASS, X509KeyStorageFlags.PersistKeySet);
-				X509Certificate2 root = collection[0];
-				if (root.NotAfter < DateTime.Now)
-				{
-					root = GetRootCA();
-				}
-				AddOrGetExisting(rootCA, path => root, val => (val as X509Certificate2).NotAfter);
-			}
+			InitializePKCS12(rootCA, rootCA, CreateRootCertFile, GetRootCA);
+			InitializePKCS12(ocspCA, ocspCA, CreateOCSPCertFile, GetOCSPCA);
+			InitializePKCS12(mitmHost, mitmCert, CreateCertificate, () => GetCertificate(mitmHost));
+		}
 
-			if (!File.Exists(ocspCA))
+		private void InitializePKCS12(object key, string filepath, Func<object, object> pkcs12Factory, Func<X509Certificate2> pkcs12Get)
+		{
+			X509Certificate2Collection collection;
+			if (!File.Exists(filepath))
 			{
-				AddOrGetExisting(ocspCA, CreateOCSPCertFile, val => (val as X509Certificate2).NotAfter);
+				AddOrGetExisting(key, pkcs12Factory, val => (val as X509Certificate2).NotAfter);
 			}
 			else
 			{
 				collection = new X509Certificate2Collection();
-				collection.Import(ocspCA, Resources.PFX_PASS, X509KeyStorageFlags.PersistKeySet);
-				X509Certificate2 ocsp = collection[0];
-				if (ocsp.NotAfter < DateTime.Now)
+				collection.Import(filepath, Resources.PFX_PASS, X509KeyStorageFlags.PersistKeySet);
+				X509Certificate2 cert = collection[0];
+				if (cert.NotAfter < DateTime.Now)
 				{
-					ocsp = GetOCSPCA();
+					cert = pkcs12Get();
 				}
-				AddOrGetExisting(ocspCA, path => ocsp, val => (val as X509Certificate2).NotAfter);
+				AddOrGetExisting(key, path => cert, val => (val as X509Certificate2).NotAfter);
 			}
 		}
 
@@ -348,7 +345,7 @@ namespace Tiriryarai.Util
 		{
 			if (!(host is string hostname))
 				throw new ArgumentException("host must be a string");
-				
+
 			byte[] ski = new byte[20];
 			rng.NextBytes(ski);
 			byte[] sn = Guid.NewGuid().ToByteArray();
@@ -407,6 +404,11 @@ namespace Tiriryarai.Util
 			p12.AddCertificate(new X509Certificate(cb.Sign(root.PrivateKey)), attributes);
 			p12.AddCertificate(new X509Certificate(root.GetRawCertData())); // TODO Attributes? Is it even necessary to send the root certificate?
 			p12.AddPkcs8ShroudedKeyBag(subjectKey, attributes);
+
+			if (hostname.Equals(mitmHost))
+			{
+				p12.SaveToFile(mitmCert);
+			}
 
 			return new X509Certificate2(
 				p12.GetBytes(),

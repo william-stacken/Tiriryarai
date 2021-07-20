@@ -18,6 +18,7 @@
 //
 
 using System;
+using System.Text;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.Security;
@@ -42,46 +43,25 @@ namespace Tiriryarai.Server
 	/// </summary>
 	class HttpsMitmProxy
 	{
-		private IPAddress ip;
-		private readonly ushort port;
+		private HttpsMitmProxyParams prms;
 
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> handlers;
 
 		private HttpsMitmProxyCache cache;
-		private IManInTheMiddle mitm;
 		private Logger logger;
-
-		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port) :
-		    this(mitm, port, DefaultIPAddress, DefaultConfigDir, DefaultVerbosity) { }
-		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, IPAddress ip) :
-		    this(mitm, port, ip, DefaultConfigDir, DefaultVerbosity) { }
-		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, string configDir) :
-		    this(mitm, port, DefaultIPAddress, configDir, DefaultVerbosity) { }
-		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, uint logVerbosity) :
-		    this(mitm, port, DefaultIPAddress, DefaultConfigDir, logVerbosity) { }
-		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, IPAddress ip, string configDir) :
-		    this(mitm, port, ip, configDir, DefaultVerbosity) { }
-		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, IPAddress ip, uint logVerbosity) :
-		    this(mitm, port, ip, DefaultConfigDir, logVerbosity) { }
-		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, string configDir, uint logVerbosity) :
-		    this(mitm, port, DefaultIPAddress, configDir, logVerbosity) { }
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Server.HttpsMitmProxy"/> class.
 		/// Does not start the server.
 		/// </summary>
-		/// <param name="mitm">A man-in-the-middle handler that will receive incomming requests and outgoing responses
-		/// to tamper with them.</param>
-		/// <param name="port">The port the server will listen on.</param>
-		/// <param name="ip">The IP address the server will listen on.</param>
-		/// <param name="configDir">A directory where certificates, server configuration, and log files will be stored.</param>
-		/// <param name="logVerbosity">The higher this value is, the more information will be logged.</param>
-		public HttpsMitmProxy(IManInTheMiddle mitm, ushort port, IPAddress ip, string configDir, uint logVerbosity)
+		/// <param name="prms">Various parameters and configuration used by the proxy.</param>
+		public HttpsMitmProxy(HttpsMitmProxyParams prms)
 		{
-			Directory.CreateDirectory(configDir);
-			string logDir = Path.Combine(configDir, "logs");
+			IPAddress ip = prms.IP;
+			Directory.CreateDirectory(prms.ConfigDirectory);
+			string logDir = Path.Combine(prms.ConfigDirectory, "logs");
 			logger = Logger.GetSingleton();
-			logger.Initialize(logDir, logVerbosity);
+			logger.Initialize(logDir, (uint) prms.LogVerbosity);
 			handlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
 			{
 				{"/favicon.ico", Favicon},
@@ -91,15 +71,13 @@ namespace Tiriryarai.Server
 				{Resources.CRL_PATH, CRL}
 			};
 			X509CertificateUrls urls = new X509CertificateUrls(
-				"http://" + ip + ":" + port + Resources.CA_ISSUER_PATH,
-				"http://" + ip + ":" + port + Resources.OCSP_PATH,
-				"http://" + ip + ":" + port + Resources.CRL_PATH
+				"http://" + ip + ":" + prms.Port + Resources.CA_ISSUER_PATH,
+				"http://" + ip + ":" + prms.Port + Resources.OCSP_PATH,
+				"http://" + ip + ":" + prms.Port + Resources.CRL_PATH
 			);
-			cache = new HttpsMitmProxyCache(configDir, 500, 60000, urls);
+			cache = new HttpsMitmProxyCache(prms.Hostname, prms.ConfigDirectory, 500, 60000, urls);
 
-			this.ip = ip;
-			this.port = port;
-			this.mitm = mitm;
+			this.prms = prms;
 		}
 
 		/* HTTP request handler callbacks */
@@ -122,6 +100,7 @@ namespace Tiriryarai.Server
 
 		private void CaIssuer(HttpRequest req, HttpResponse resp)
 		{
+			logger.Log(9, req.Host, "INCOMMING ISSUER REQUEST", req);
 			resp.SetHeader("Content-Type", "application/pkix-cert");
 			resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
 			logger.Log(9, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
@@ -129,6 +108,7 @@ namespace Tiriryarai.Server
 
 		private void OCSP(HttpRequest req, HttpResponse resp)
 		{
+			logger.Log(8, req.Host, "INCOMMING OCSP REQUEST", req);
 			X509OCSPResponse ocspResp = cache.GetOCSPResponse(req);
 			resp.SetHeader("Content-Type", "application/ocsp-response");
 			resp.SetBodyAndLength(ocspResp.RawData);
@@ -137,6 +117,7 @@ namespace Tiriryarai.Server
 
 		private void CRL(HttpRequest req, HttpResponse resp)
 		{
+			logger.Log(8, req.Host, "INCOMMING CRL REQUEST", req);
 			X509Crl crl = cache.GetCrl();
 			resp.SetHeader("Content-Type", "application/pkix-crl");
 			resp.SetHeader("Expires", crl.ThisUpdate.ToString("r"));
@@ -150,9 +131,10 @@ namespace Tiriryarai.Server
 		/// </summary>
 		public void Start()
 		{
-			TcpListener listener = new TcpListener(ip, port);
+			TcpListener listener = new TcpListener(IPAddress.Any, prms.Port);
 			listener.Start();
-			Console.WriteLine("Listening for connections on https://" + ip + ":" + port + "/");
+			Console.WriteLine("Listening for connections on https://" +
+			                   prms.Hostname + ":" + prms.Port + "/");
 			while (true)
 			{
 				TcpClient client = listener.AcceptTcpClient();
@@ -164,7 +146,6 @@ namespace Tiriryarai.Server
 		{
 			HttpRequest req;
 			HttpResponse resp;
-			HttpMessage http;
 			try
 			{
 				Stream stream = client.GetStream();
@@ -172,76 +153,112 @@ namespace Tiriryarai.Server
 				req = HttpRequest.FromStream(stream);
 				if (req.Method == Method.CONNECT)
 				{
-					string host = req.Uri;
+					X509Certificate2 cert = cache.GetCertificate(req.Uri);
+
 					resp = new HttpResponse(200, null, null, "Connection Established");
 					resp.ToStream(stream);
 
-					X509Certificate2 cert = cache.GetCertificate(host);
-
 					SslStream sslStream = new SslStream(stream, false);
-					sslStream.AuthenticateAsServer(cert);
-
-					req = HttpRequest.FromStream(sslStream);
-
-					if (!mitm.Block(host))
+					try
 					{
-						logger.Log(6, req.Host, "RECEIVED REQUEST", req);
+						sslStream.AuthenticateAsServer(cert);
 
-						if (!IsDestinedToMitm(req))
-						{
-							Console.WriteLine("\n--------------------\n" + req.Method + " https://" + req.Host + req.Uri);
+						req = HttpRequest.FromStream(sslStream);
+						resp = HandleRequest(req, tls: true);
 
-							http = mitm.HandleRequest(req);
-							if (http is HttpRequest modified)
-							{
-								logger.Log(7, req.Host, "MODIFIED REQUEST", modified);
-								resp = new HttpsClient(req.Host).Send(modified);
-								logger.Log(6, req.Host, "RECEIVED RESPONSE", resp);
-								resp = mitm.HandleResponse(resp, req);
-								logger.Log(7, req.Host, "MODIFIED RESPONSE", resp);
-							}
-							else if (http is HttpResponse intercepted)
-							{
-								logger.Log(6, req.Host, "CUSTOM RESPONSE", intercepted);
-								resp = intercepted;
-							}
-							else
-							{
-								throw new Exception("Invalid message type");
-							}
-							resp.ToStream(sslStream);
-							sslStream.Close();
-							client.Close();
-							return;
-						}
-					}
-					else // Host is blocked, send bad gateway
-					{
-						logger.Log(6, req.Host, "BLOCKED REQUEST", req);
-						resp = new HttpResponse(502);
 						resp.ToStream(sslStream);
+					}
+					catch (Exception e)
+					{
+						logger.LogException(e);
+					}
+					finally
+					{
 						sslStream.Close();
-						client.Close();
-						return;
 					}
 				}
-				resp = HomePage(req);
-				resp.ToStream(stream);
-				client.Close();
+				else
+				{
+					// TODO Either redirect the client to the host but in HTTPS using 301,
+					// or send a 405 that only CONNECT is supported. Either way, proxying
+					// non-HTTPS traffic should probably not be supported since it's kind of
+					// unorthodox and it would be tricky to support proxy authentication
+					// alongside it.
+					resp = HandleRequest(req, tls: false);
+					resp.ToStream(stream);
+				}
 			}
 			catch (Exception e)
 			{
 				logger.LogException(e);
 			}
+			finally
+			{
+				client.Close();
+			}
+		}
+
+		private HttpResponse HandleRequest(HttpRequest req, bool tls)
+		{
+			HttpResponse resp;
+			HttpMessage http;
+			string host = req.Host;
+
+			if (!IsDestinedToMitm(req))
+			{
+				if (!prms.MitM.Block(host))
+				{
+					logger.Log(6, host, "RECEIVED REQUEST", req);
+					Console.WriteLine("\n--------------------\n" +
+					    req.Method + " https://" + host + req.Path);
+
+					http = prms.MitM.HandleRequest(req);
+					if (http is HttpRequest modified)
+					{
+						logger.Log(7, host, "MODIFIED REQUEST", modified);
+
+						resp = new HttpsClient(host).Send(modified);
+						logger.Log(6, host, "RECEIVED RESPONSE", resp);
+
+						resp = prms.MitM.HandleResponse(resp, req);
+						logger.Log(7, host, "MODIFIED RESPONSE", resp);
+					}
+					else if (http is HttpResponse intercepted)
+					{
+						logger.Log(6, host, "CUSTOM RESPONSE", intercepted);
+						resp = intercepted;
+					}
+					else // Should never be reached
+					{
+						throw new Exception("Invalid message type");
+					}
+				}
+				else // Host is blocked, send bad gateway
+				{
+					logger.Log(6, req.Host, "BLOCKED REQUEST", req);
+					resp = new HttpResponse(502);
+				}
+			}
+			else
+			{
+				resp = HomePage(req, tls);
+			}
+			return resp;
 		}
 
 		private bool IsDestinedToMitm(HttpRequest req)
 		{
+			// TODO: This may not be an exhaustive list, if there is another
+			// loopback IP, there is a risk of an infinite loop where the proxy
+			// sends requests to itself
 			string host = req.Host.Split(':')[0];
-			return host.Equals(ip.ToString()) || host.Equals("localhost") || host.Equals("127.0.0.1");
+			return host.Equals(prms.Hostname) ||
+			       host.Equals(prms.IP.ToString()) ||
+				   host.Equals("localhost") ||
+				   host.Equals("127.0.0.1");
 		}
 
-		public HttpResponse HomePage(HttpRequest req)
+		public HttpResponse HomePage(HttpRequest req, bool tls)
 		{
 			HttpResponse resp = new HttpResponse(200);
 			resp.SetHeader("Date", DateTime.Now.ToString("r"));
@@ -249,41 +266,27 @@ namespace Tiriryarai.Server
 			if (handlers.TryGetValue(req.Path, out Action<HttpRequest, HttpResponse> handler))
 			{
 				handler(req, resp);
-				return resp;
 			}
-			return mitm.HomePage(req);
-		}
-
-		public static IPAddress DefaultIPAddress
-		{
-			get
+			else if (!tls)
 			{
-				IPHostEntry host = Dns.GetHostEntry(Dns.GetHostName());
-				foreach (IPAddress ipa in host.AddressList)
-				{
-					if (ipa.AddressFamily == AddressFamily.InterNetwork)
-					{
-						return ipa;
-					}
-				}
-				throw new Exception("The system has no IPv4 address to use by default.");
+				// If the client is attempting to access insecurely, show
+				// default welcome page with info.
+				resp.SetHeader("Content-Type", "text/html");
+				resp.SetBodyAndLength(Encoding.Default.GetBytes(
+					string.Format(Resources.WELCOME_PAGE, prms.Hostname, prms.Port)
+				));
 			}
-		}
-
-		public static string DefaultConfigDir
-		{
-			get
+			else if (prms.Authenticate && !req.BasicAuthenticated(prms.Username, prms.Password))
 			{
-				return Path.Combine(
-					Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-					"Tiriryarai"
-				);
+				resp.Status = 401;
+				resp.SetHeader("Content-Length", "0");
+				resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to MitM homepage\"");
 			}
-		}
-
-		public static uint DefaultVerbosity
-		{
-			get { return 6; }
+			else
+			{
+				resp = prms.MitM.HomePage(req);
+			}
+			return resp;
 		}
 	}
 }

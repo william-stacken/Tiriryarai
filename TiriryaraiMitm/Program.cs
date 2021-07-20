@@ -18,10 +18,12 @@
 //
 
 using System;
-using System.Net;
-using System.Net.Sockets;
+using System.Collections.Generic;
+
+using Mono.Options;
 
 using Tiriryarai.Server;
+using Tiriryarai.Util;
 
 
 namespace TiriryaraiMitm
@@ -31,40 +33,59 @@ namespace TiriryaraiMitm
 	/// </summary>
 	class Program
 	{
+		private static string Hostname = null;
+		private static ushort Port = 8081;
+		private static uint? Verbosity = null;
+		private static string Username = null;
+		private static string Password = null;
+		private static string ConfigDir = null;
+		private static bool Help = false;
+
 		/// <summary>
 		/// The entry point of the program, where the program control starts and ends.
 		/// </summary>
-		/// <param name="args">The command-line arguments. The program takes two arguments:
-		/// The port number where the HTTPS man-in-the-middle proxy will be hosted, <c>8081</c>
-		/// by default, and the log verbosity, with a default verbosity if not provided.</param>
+		/// <param name="args">The command-line arguments.</param>
 		static void Main(string[] args)
 		{
-			HttpsMitmProxy proxy = null;
-			MiddleMan mitm = new MiddleMan();
-			ushort port = 8081;
-			if (args.Length > 1 && !ushort.TryParse(args[1], out port))
+			List<string> extraOpts = new List<string>();
+			OptionSet opts = new OptionSet
 			{
-				Console.WriteLine(args[1] + " is not a valid port number!");
-				Environment.Exit(-1);
-			}
+				{ "d|hostname=", "The hostname of the server, if it has one.", (host) => Hostname = host },
+				{ "p|port=", "The port the server will listen on, 8081 by default.", (ushort port) => Port = port },
+				{ "v|verbosity=", "The higher this value is, the more information will be logged.", (uint v) => Verbosity = v },
+				{ "u|username=", "The username required for basic HTTP authentication if one should be required.", (user) => Username = user },
+				{ "w|password=", "The password required for basic HTTP authentication if one should be required.", (pass) => Password = pass },
+				{ "c|configdir=", "The directory where certificates, server configuration, and log files will be stored.", (dir) => ConfigDir = dir },
+				{ "h|help",  "Show help", _ => Help = true }
+			};
+
 			try
 			{
-				if (args.Length > 2)
+				extraOpts = opts.Parse(args);
+			}
+			catch (OptionException e)
+			{
+				Console.WriteLine(e.Message);
+				Help = true;
+			}
+
+			if (Help || extraOpts.Count > 0)
+			{
+				opts.WriteOptionDescriptions(Console.Out);
+				Environment.Exit(-1);
+			}
+
+			HttpsMitmProxy proxy = null;
+			try
+			{
+				HttpsMitmProxyParams prms = new HttpsMitmProxyParams(Port, Username, Password)
 				{
-					if (uint.TryParse(args[2], out uint verbosity))
-					{
-						proxy = new HttpsMitmProxy(mitm, port, verbosity);
-					}
-					else
-					{
-						Console.WriteLine(args[2] + " is not a valid log verbosity!");
-						Environment.Exit(-2);
-					}
-				}
-				else
-				{
-					proxy = new HttpsMitmProxy(mitm, port);
-				}
+					MitM = new MiddleMan(),
+					ConfigDirectory = ConfigDir,
+					LogVerbosity = Verbosity,
+					Hostname = Hostname
+				};
+				proxy = new HttpsMitmProxy(prms);
 			}
 			catch (Exception e)
 			{

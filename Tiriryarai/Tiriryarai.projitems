@@ -31,6 +31,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Util\Resources.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Util\X509CertificateUrls.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Util\Logger.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Util\HttpsMitmProxyParams.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="$(MSBuildThisFileDirectory)Security\" />

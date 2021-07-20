@@ -18,6 +18,7 @@ An HTTPS man-in-the-middle proxy framework written in C#.
 - OCSP query support (No OCSP stapling).
 - Certificate Revocation List (CRL) support.
 - Logging of HTTP requests and responses.
+- Customized web interfaces for configuring the proxy with HTTP basic authentication support.
 
 ## 2. Files
 The program creates the following folders and files:
@@ -42,11 +43,11 @@ Install **Mono** from [here](https://www.mono-project.com/download/stable/#downl
  - Add a reference to the `Tiriryarai` project, `System.Web`, `System.Runtime.Config`, and `Mono.Security`.
  - Create a new class that implements the [`IManInTheMiddle`](Tiriryarai/Server/IManInTheMiddle.cs) interface.
  - In the main method, create an instance of the [`HttpsMitmProxy`](Tiriryarai/Server/HttpsMitmProxy.cs) class
-   and call its `Start()` method by passing an instance of the class implementeing `IManInTheMiddle`, a port
-   number, and optionally an IP address, a directory to keep the files mentioned in [2. Files](#2-files) and
-   a log verbosity used to filter unwanted logs.
+   and call its `Start()` method by passing an instance of the [`HttpsMitmProxyParams`](Tiriryarai/Util/HttpsMitmProxyParams.cs)
+   class.
 
-[`TiriryaraiMitm`](TiriryaraiMitm) contains a dummy example plugin that can be used for reference.
+[`TiriryaraiMitm`](TiriryaraiMitm) contains a dummy example plugin that can be used for reference. It makes
+use of the `Mono.Options` nuget package to parse command line arguments.
 
 ## 5. How To Use
 The first time Tiriryarai starts up it needs to generate `-RootCA-.pfx` and `-OcspCA-.pfx`, which takes

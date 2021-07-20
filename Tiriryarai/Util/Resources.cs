@@ -43,6 +43,32 @@ namespace Tiriryarai.Util
 		};
 		public static string OCSP_CN = "TiriryaraiCA OCSP Responder";
 
+		public static string WELCOME_PAGE =
+			"<!DOCTYPE html>" +
+			"<html>" +
+			  "<head>" +
+				"<title>Tiriryarai</title>" +
+				"<meta charset=\"utf-8\"/>" +
+			  "</head>" +
+			  "<body>" +
+				"<h1>Welcome to Tiriryarai!</h1>" +
+				"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+				"<p>" +
+				  "If you're seeing this page, it means that Tiriryarai is up and running! " +
+				  "To use Tiriryarai, download the <a href=\"/cert\">CA Certificate</a>, but " +
+				  "<strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, so " +
+				  "it is recommended that you download it over a trusted network, such as your " +
+				  "own LAN. If that is not possible, please be aware of the risks involved with " +
+				  "installing the certificate." +
+				"</p>" +
+				"<p>" +
+				  "Once you have installed the certificate in your client and configured it to " +
+				  "use the proxy, you can reach the secure custom MitM site <a href=\"https://{0}:{1}\">here</a>." +
+				  "(Or if the link doesn't work, try inputting thr URL manually.)" +
+				"</p>" +
+			  "</body>" +
+			"</html>";
+
 		public static byte[] Get(string name)
 		{
 			MemoryStream ms = new MemoryStream();

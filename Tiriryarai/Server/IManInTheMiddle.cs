@@ -51,8 +51,9 @@ namespace Tiriryarai.Server
 		HttpResponse HandleResponse(HttpResponse resp, HttpRequest req);
 
 		/// <summary>
-		/// Handles a request destined to the man-in-the-middle handler and returnes a custom
-		/// response.
+		/// Handles a request destined to the man-in-the-middle handler and returns a custom response. All requests
+		/// sent to this method were received securely using HTTPS, and were authenticated using HTTP basic
+		/// authentication if it was required in the <see cref="T:Tiriryarai.Util.HttpsMitmProxyParams"/>
 		/// <example>This response could for example be a configuration GUI.</example>
 		/// </summary>
 		/// <returns>The custom response.</returns>

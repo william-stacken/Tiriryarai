@@ -33,11 +33,17 @@
     <Reference Include="Mono.Security" />
     <Reference Include="System.Web" />
     <Reference Include="System.Runtime.Caching" />
+    <Reference Include="Mono.Options">
+      <HintPath>..\packages\Mono.Options.6.6.0.161\lib\net40\Mono.Options.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="MiddleMan.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="..\Tiriryarai\Tiriryarai.projitems" Label="Shared" Condition="Exists('..\Tiriryarai\Tiriryarai.projitems')" />
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />

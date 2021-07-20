@@ -84,28 +84,34 @@ namespace Tiriryarai.Crypto
 
 			ASN1 asn = new ASN1(encoded);
 
-			if (asn.Tag != 0x30 || asn.Count != 2 ||
-				asn[0].Tag != 0x0A || asn[0].Value.Length != 1 ||
-				asn[1].Tag != 0xA0 || asn[1].Count < 1 ||
-				asn[1][0].Tag != 0x30 || asn[1][0].Count != 2)
+			if (asn.Tag != 0x30 || asn.Count < 1 ||
+				asn[0].Tag != 0x0A || asn[0].Value.Length != 1)
 				throw new ArgumentException("Invalid X509OCSPResponse");
 
 			Status = (ResponseStatus)asn[0].Value[0];
-			ASN1 oid = asn[1][0][0];
-			if (oid.Tag != 0x06)
-				throw new Exception();
-			Type = ASN1Convert.ToOid(oid);
-			ASN1 response = asn[1][0][1];
-			if (response.Tag != 0x04)
-				throw new Exception();
 
-			if (TYPE_BASIC_OID.Equals(Type))
+			if (asn.Count > 1)
 			{
-				Response = new X509BasicOCSPResponseBuilder(response.Value);
-			}
-			else
-			{
-				throw new ArgumentException("Unsupported response type");
+				if (asn.Count != 2 || asn[1].Tag != 0xA0 || asn[1].Count < 1 ||
+				    asn[1][0].Tag != 0x30 || asn[1][0].Count != 2)
+					throw new ArgumentException("Invalid X509OCSPResponse");
+
+				ASN1 oid = asn[1][0][0];
+				if (oid.Tag != 0x06)
+					throw new Exception();
+				Type = ASN1Convert.ToOid(oid);
+				ASN1 response = asn[1][0][1];
+				if (response.Tag != 0x04)
+					throw new Exception();
+
+				if (TYPE_BASIC_OID.Equals(Type))
+				{
+					Response = new X509BasicOCSPResponseBuilder(response.Value);
+				}
+				else
+				{
+					throw new ArgumentException("Unsupported response type");
+				}
 			}
 		}
 
@@ -113,7 +119,7 @@ namespace Tiriryarai.Crypto
 
 		/// <summary>
 		/// Gets the raw, signed, data of the OCSP Response. May only be
-		/// retreived if the OCSP Response has already been signed. Otherwise,
+		/// retrieved if the OCSP Response has already been signed. Otherwise,
 		/// <code>Sign()</code> should be called instead.
 		/// </summary>
 		/// <value>The raw data.</value>
