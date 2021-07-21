@@ -19,6 +19,7 @@
 
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Globalization;
 using System.Collections.Generic;
@@ -44,6 +45,44 @@ namespace Tiriryarai.Http
 			get
 			{
 				return Chunked ? ReadChunked(new MemoryStream(Body), false) : Body;
+			}
+		}
+
+		public byte[] ContentDecodedBody
+		{
+			get
+			{
+				byte[] chunkDecoded = ChunkDecodedBody;
+				Stream encStream;
+				string[] enc = GetHeader("Content-Encoding");
+				if (enc != null && enc.Length > 0 && enc[0] != null)
+				{
+					enc[0] = enc[0].ToLower().Trim();
+					if ("gzip".Equals(enc[0]))
+					{
+						encStream = new GZipStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
+					}
+					else if ("br".Equals(enc[0]))
+					{
+						// TODO Is there support for BrotliStream in Mono?
+						//encStream = new BrotliStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
+						return chunkDecoded;
+					}
+					else if ("deflate".Equals(enc[0]))
+					{
+						encStream = new DeflateStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
+					}
+					else
+					{
+						return chunkDecoded;
+					}
+					using (MemoryStream ms = new MemoryStream())
+					{
+					    encStream.CopyTo(ms);
+					    return ms.ToArray();
+					}
+				}
+				return chunkDecoded;
 			}
 		}
 
@@ -77,7 +116,7 @@ namespace Tiriryarai.Http
 				{
 					for (int i = 0; i < transferEncoding.Length; i++)
 					{
-						if (transferEncoding[i].ToLower().Equals("chunked"))
+						if (transferEncoding[i].ToLower().Trim().Equals("chunked"))
 							return true;
 					}
 				}
@@ -164,10 +203,10 @@ namespace Tiriryarai.Http
 		{
 			string[] auth;
 			string[] authArr = GetHeader("Authorization");
-			if (authArr != null && authArr.Length > 0)
+			if (authArr != null && authArr.Length > 0 && authArr[0] != null)
 			{
 				auth = authArr[0].Split(' ');
-				if (auth != null && auth.Length > 1 && "Basic".Equals(auth[0]))
+				if (auth != null && auth.Length > 1 && auth[0] != null && "basic".Equals(auth[0].ToLower().Trim()))
 				{
 					return Convert.ToBase64String(
 						Encoding.Default.GetBytes(user + ":" + pass)
@@ -255,10 +294,7 @@ namespace Tiriryarai.Http
 
 		public override string ToString()
 		{
-			//char[] charBody = new char[Body.Length / sizeof(char)];
-
-			//Buffer.BlockCopy(Body, 0, charBody, 0, Body.Length);
-			return HeadersToString() + /*new string(charBody)*/ Encoding.Default.GetString(Body);
+			return HeadersToString() + Encoding.Default.GetString(ContentDecodedBody);
 		}
 
 		protected string HeadersToString()

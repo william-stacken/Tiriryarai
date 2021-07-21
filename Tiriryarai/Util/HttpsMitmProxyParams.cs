@@ -2,6 +2,7 @@
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 using Tiriryarai.Server;
 
 namespace Tiriryarai.Util
@@ -164,6 +165,9 @@ namespace Tiriryarai.Util
 			if ((username != null || password != null) && (username == null || password == null))
 				throw new ArgumentException("Both username and password must be given");
 
+			if (username != null && password != null &&
+			    (new Regex("[\x00-\x1f\x7f:]").IsMatch(username) || new Regex("[\x00-\x1f\x7f]").IsMatch(password)))
+				throw new ArgumentException("Username \"" + username + "\" or password \"" + password + "\" contains invalid characters");
 			Username = username;
 			Password = password;
 		}

@@ -17,7 +17,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using System;
 using System.IO;
+using System.Reflection;
 
 namespace Tiriryarai.Util
 {
@@ -26,6 +28,9 @@ namespace Tiriryarai.Util
 	/// </summary>
 	static class Resources
 	{
+		public static readonly Assembly Assembly = typeof(Resources).Assembly;
+		public static readonly Version Version = Assembly.GetName().Version;
+
 		public static readonly string CA_ISSUER_PATH = "/TiriryaraiCA.crt";
 		public static readonly string OCSP_PATH = "/ocsp";
 		public static readonly string CRL_PATH = "/revoked.crl";
@@ -63,7 +68,33 @@ namespace Tiriryarai.Util
 				"</p>" +
 				"<p>" +
 				  "Once you have installed the certificate in your client and configured it to " +
-				  "use the proxy, you can reach the secure custom MitM site <a href=\"https://{0}:{1}\">here</a>." +
+				  "use the proxy, you can reach the secure custom MitM plugin site <a href=\"https://{0}:{1}\">here</a>. " +
+				  "(Or if the link doesn't work, try inputting thr URL manually.)" +
+				"</p>" +
+			  "</body>" +
+			"</html>";
+
+		public static string AUTH_PAGE =
+			"<!DOCTYPE html>" +
+			"<html>" +
+			  "<head>" +
+				"<title>Tiriryarai</title>" +
+				"<meta charset=\"utf-8\"/>" +
+			  "</head>" +
+			  "<body>" +
+				"<h1>Welcome to Tiriryarai!</h1>" +
+				"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+				"<p>" +
+				  "If you're seeing this page, it means that Tiriryarai is up and running! " +
+				  "To use Tiriryarai, download the <a href=\"/cert\">CA Certificate</a>, but " +
+				  "<strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, so " +
+				  "it is recommended that you download it over a trusted network, such as your " +
+				  "own LAN. If that is not possible, please be aware of the risks involved with " +
+				  "installing the certificate." +
+				"</p>" +
+				"<p>" +
+				  "Once you have installed the certificate in your client and configured it to " +
+				  "use the proxy, you can reach the secure custom MitM plugin site <a href=\"https://{0}:{1}\">here</a>. " +
 				  "(Or if the link doesn't work, try inputting thr URL manually.)" +
 				"</p>" +
 			  "</body>" +
@@ -72,7 +103,7 @@ namespace Tiriryarai.Util
 		public static byte[] Get(string name)
 		{
 			MemoryStream ms = new MemoryStream();
-			typeof(Resources).Assembly.GetManifestResourceStream(name).CopyTo(ms);
+			Assembly.GetManifestResourceStream(name).CopyTo(ms);
 			return ms.ToArray();
 		}
 	}

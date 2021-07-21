@@ -146,14 +146,17 @@ namespace Tiriryarai.Server
 		{
 			HttpRequest req;
 			HttpResponse resp;
+			string host = null;
 			try
 			{
+				host = null;
 				Stream stream = client.GetStream();
 
 				req = HttpRequest.FromStream(stream);
 				if (req.Method == Method.CONNECT)
 				{
-					X509Certificate2 cert = cache.GetCertificate(req.Uri);
+					host = req.Uri.Split(':')[0];
+					X509Certificate2 cert = cache.GetCertificate(host);
 
 					resp = new HttpResponse(200, null, null, "Connection Established");
 					resp.ToStream(stream);
@@ -190,7 +193,7 @@ namespace Tiriryarai.Server
 			}
 			catch (Exception e)
 			{
-				logger.LogException(e);
+				logger.LogException(e, host);
 			}
 			finally
 			{
@@ -261,6 +264,7 @@ namespace Tiriryarai.Server
 		public HttpResponse HomePage(HttpRequest req, bool tls)
 		{
 			HttpResponse resp = new HttpResponse(200);
+			resp.SetHeader("Server", "Tiriryarai/" + Resources.Version);
 			resp.SetHeader("Date", DateTime.Now.ToString("r"));
 
 			if (handlers.TryGetValue(req.Path, out Action<HttpRequest, HttpResponse> handler))
@@ -272,6 +276,9 @@ namespace Tiriryarai.Server
 				// If the client is attempting to access insecurely, show
 				// default welcome page with info.
 				resp.SetHeader("Content-Type", "text/html");
+				resp.SetHeader("Expires", new DateTime(1990, 1, 1).ToString("r"));
+				resp.SetHeader("Pragma", "no-cache");
+				resp.SetHeader("Cache-Control", "no-store, must-revalidate");
 				resp.SetBodyAndLength(Encoding.Default.GetBytes(
 					string.Format(Resources.WELCOME_PAGE, prms.Hostname, prms.Port)
 				));
@@ -279,8 +286,9 @@ namespace Tiriryarai.Server
 			else if (prms.Authenticate && !req.BasicAuthenticated(prms.Username, prms.Password))
 			{
 				resp.Status = 401;
+				resp.SetHeader("Content-Type", "text/html");
 				resp.SetHeader("Content-Length", "0");
-				resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to MitM homepage\"");
+				resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to MitM plugin homepage\"");
 			}
 			else
 			{
