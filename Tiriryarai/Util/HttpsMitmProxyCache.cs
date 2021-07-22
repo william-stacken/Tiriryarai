@@ -19,6 +19,7 @@
 
 using System;
 using System.Net;
+using System.Web;
 using System.IO;
 using System.Threading;
 using System.Collections;
@@ -33,6 +34,8 @@ using Mono.Security.X509.Extensions;
 
 using Tiriryarai.Http;
 using Tiriryarai.Crypto;
+
+using HttpRequest = Tiriryarai.Http.HttpRequest;
 
 using CRLDistributionPointsExtension = Tiriryarai.Crypto.CRLDistributionPointsExtension;
 using KeyUsageExtension = Tiriryarai.Crypto.KeyUsageExtension;
@@ -51,6 +54,7 @@ namespace Tiriryarai.Util
 	{
 		private static readonly Random rng = new Random();
 
+		private Logger logger;
 		private MemoryCache cache;
 		private readonly string mitmHost;
 
@@ -73,6 +77,7 @@ namespace Tiriryarai.Util
 		/// <param name="urls">An immutable collection of URLs used when generating certificates.</param>
 		public HttpsMitmProxyCache(string mitmHost, string storeDir, int mbMemoryLimit, int pollingInterval, X509CertificateUrls urls)
 		{
+			logger = Logger.GetSingleton();
 			this.mitmHost = mitmHost;
 			rootCA = Path.Combine(storeDir, "-RootCA-.pfx");
 			ocspCA = Path.Combine(storeDir, "-OcspCA-.pfx");
@@ -205,24 +210,21 @@ namespace Tiriryarai.Util
 		{
 			try
 			{
-				X509OCSPRequest ocspReq = new X509OCSPRequest(req.Body);
+				// Fetch the OCSP request from the URI as base64 if the content type isn't an
+				// OCSP request.
+				byte[] rawOcspReq = "application/ocsp-request".Equals(req.GetHeader("Content-Type")?[0]) ?
+					req.Body : Convert.FromBase64String(HttpUtility.UrlDecode(req.SubPath(1)));
+
+				X509OCSPRequest ocspReq = new X509OCSPRequest(rawOcspReq);
 				// TODO X509OCSPCertID has no equals method, so is there any way for the cache to tell if an OCSP response
 				// is already present?
-				return AddOrGetExisting(ocspReq.CertificateID, CreateOCSPResponse, val => {
-					X509BasicOCSPResponseBuilder ocsp = (val as X509OCSPResponse).Response as X509BasicOCSPResponseBuilder;
-					DateTime earliestExpiry = DateTime.MaxValue;
-
-					foreach (X509OCSPSingleResponse single in ocsp.SingleResponses)
-					{
-						if (single.NextUpdate < earliestExpiry)
-							earliestExpiry = single.NextUpdate;
-					}
-					return earliestExpiry;
-				}) as X509OCSPResponse;
+				return AddOrGetExisting(ocspReq.CertificateID, CreateOCSPResponse, val => (
+				    val as X509OCSPResponse).ExpiryDate
+				) as X509OCSPResponse;
 			}
 			catch (Exception e)
 			{
-				Console.WriteLine(e);
+				logger.LogException(e, req);
 			}
 			return new X509OCSPResponse(
 				new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest).Sign(GetOCSPCA())
@@ -466,7 +468,7 @@ namespace Tiriryarai.Util
 			}
 			catch (Exception e)
 			{
-				Console.WriteLine(e);
+				logger.LogException(e, certId);
 				ocsp = new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest);
 			}
 			return new X509OCSPResponse(ocsp.Sign(GetOCSPCA()));

@@ -82,6 +82,14 @@ namespace Tiriryarai.Http
 		public int Status { get; set; }
 		public string StatusMessage { get; set; }
 
+		public string ResponseLine
+		{
+			get
+			{
+				return "HTTP/1.1 " + Status + " " + (StatusMessage ?? statusMsg[Status / 100 - 1][Status % 100]) + "\r\n";
+			}
+		}
+
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Http.HttpResponse"/> class.
 		/// </summary>
@@ -157,7 +165,7 @@ namespace Tiriryarai.Http
 		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpResponse"/> to.</param>
 		public override void ToStream(Stream stream)
 		{
-			byte[] enc = Encoding.Default.GetBytes(ResponseLine());
+			byte[] enc = Encoding.Default.GetBytes(ResponseLine);
 			stream.Write(enc, 0, enc.Length);
 			base.ToStream(stream);
 		}
@@ -179,12 +187,7 @@ namespace Tiriryarai.Http
 		/// <returns>A <see cref="T:System.String"/> that represents the current <see cref="T:Tiriryarai.Http.HttpResponse"/>.</returns>
 		public override string ToString()
 		{
-			return ResponseLine() + base.ToString();
-		}
-
-		private string ResponseLine()
-		{
-			return "HTTP/1.1 " + Status + " " + (StatusMessage ?? statusMsg[Status / 100 - 1][Status % 100]) + "\r\n";
+			return ResponseLine + base.ToString();
 		}
 	}
 }

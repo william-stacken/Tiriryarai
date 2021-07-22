@@ -80,17 +80,18 @@ namespace TiriryaraiMitm
 		{
 			// Display a simple web page for downloading the root CA certificate
 			// and set a boolean to intercept requests
-			HttpResponse resp = new HttpResponse(200);
 			string msg = "";
 			string path = req.Path;
 			string[] contentType = req.GetHeader("Content-Type");
-			if (path.Equals("/save") && req.Method == Method.POST &&
+			HttpResponse resp = new HttpResponse(200);
+			resp.SetHeader("Content-Type", "text/html");
+
+			if ("/save".Equals(path) && req.Method == Method.POST &&
 				contentType.Length > 0 && "application/x-www-form-urlencoded".Equals(contentType[0]))
 			{
 				intercept = "on".Equals(req.GetBodyParam("intercept"));
 				msg = "<p style=\"color:#00FF00\";>Saved!</p>";
 			}
-			resp.SetHeader("Content-Type", "text/html");
 			resp.SetBodyAndLength(Encoding.Default.GetBytes(string.Format(
 				"<!DOCTYPE html>" +
 				"<html>" +

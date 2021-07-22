@@ -40,6 +40,7 @@ namespace Tiriryarai.Server
 			X509Chain chain,
 			SslPolicyErrors sslPolicyErrors)
 		{
+			// TODO Make it possible to configure Tiriryarai to check invalid certificates
 			// WARNING: Ignore invalid certificates
 			return true;
 		}

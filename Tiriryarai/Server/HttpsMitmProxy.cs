@@ -45,7 +45,8 @@ namespace Tiriryarai.Server
 	{
 		private HttpsMitmProxyParams prms;
 
-		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> handlers;
+		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpHandlers;
+		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpsHandlers;
 
 		private HttpsMitmProxyCache cache;
 		private Logger logger;
@@ -57,73 +58,162 @@ namespace Tiriryarai.Server
 		/// <param name="prms">Various parameters and configuration used by the proxy.</param>
 		public HttpsMitmProxy(HttpsMitmProxyParams prms)
 		{
-			IPAddress ip = prms.IP;
-			Directory.CreateDirectory(prms.ConfigDirectory);
-			string logDir = Path.Combine(prms.ConfigDirectory, "logs");
-			logger = Logger.GetSingleton();
-			logger.Initialize(logDir, (uint) prms.LogVerbosity);
-			handlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
+			if (!prms.Authenticate)
 			{
-				{"/favicon.ico", Favicon},
-				{"/cert", Cert},
-				{Resources.CA_ISSUER_PATH, CaIssuer},
-				{Resources.OCSP_PATH, OCSP},
-				{Resources.CRL_PATH, CRL}
+				Console.WriteLine(
+					"NOTICE: Authentication for accessing admin pages is disabled. " +
+					"Hosting Tiriryarai on the public internet or an untrusted network is strongly discouraged. " +
+					"If this was unintentional, see the help by using the \"-h\" flag."
+				);
+			}
+
+			string host = prms.Hostname;
+			Directory.CreateDirectory(prms.ConfigDirectory);
+			logger = Logger.GetSingleton();
+			logger.Initialize(
+			    Path.Combine(prms.ConfigDirectory, "logs"),
+				(uint) prms.LogVerbosity,
+				(uint) prms.MaxLogSize);
+			httpHandlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
+			{
+				{"favicon.ico", (req, resp) => {
+					if (req.GetDateHeader("If-Modified-Since") != null)
+					{
+						resp.Status = 304;
+						return;
+					}
+					resp.SetHeader("Cache-Control", "public");
+					resp.SetHeader("Content-Type", "image/x-icon");
+					resp.SetBodyAndLength(Resources.Get("favicon.ico"));
+					logger.Log(15, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
+				}},
+				{"cert", (req, resp) => {
+					if (req.GetDateHeader("If-Modified-Since") != null)
+					{
+						resp.Status = 304;
+						return;
+					}
+					resp.SetHeader("Cache-Control", "public");
+					resp.SetHeader("Content-Type", "application/octet-stream");
+					resp.SetHeader("Content-Disposition", "attachment; filename=Tiriryarai.der");
+					resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
+					logger.Log(15, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
+				}},
+				{Resources.CA_ISSUER_PATH, (req, resp) =>
+				{
+					logger.Log(8, req.Host, "INCOMMING ISSUER REQUEST", req);
+					if (req.GetDateHeader("If-Modified-Since") != null)
+					{
+						resp.Status = 304;
+						return;
+					}
+					resp.SetHeader("Content-Type", "application/pkix-cert");
+					resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
+					logger.Log(15, req.Host, "OUTGOING ISSUER RESPONSE", resp);
+				}},
+				{Resources.OCSP_PATH, (req, resp) =>
+				{
+					logger.Log(8, req.Host, "INCOMMING OCSP REQUEST", req);
+					X509OCSPResponse ocspResp = cache.GetOCSPResponse(req);
+					if (req.GetDateHeader("If-Modified-Since")?.CompareTo(ocspResp.ExpiryDate) < 0)
+					{
+						resp.Status = 304;
+						return;
+					}
+					resp.SetHeader("Content-Type", "application/ocsp-response");
+					resp.SetBodyAndLength(ocspResp.RawData);
+					logger.Log(15, req.Host, "OUTGOING OCSP RESPONSE", resp);
+				}},
+				{Resources.CRL_PATH, (req, resp) =>
+				{
+					logger.Log(8, req.Host, "INCOMMING CRL REQUEST", req);
+					X509Crl crl = cache.GetCrl();
+					if (req.GetDateHeader("If-Modified-Since")?.CompareTo(crl.NextUpdate) < 0)
+					{
+						resp.Status = 304;
+						return;
+					}
+					resp.SetHeader("Content-Type", "application/pkix-crl");
+					resp.SetHeader("Expires", crl.ThisUpdate.ToString("r"));
+					resp.SetHeader("Last-Modified", crl.NextUpdate.ToString("r"));
+					resp.SetBodyAndLength(crl.RawData);
+					logger.Log(15, req.Host, "OUTGOING CRL RESPONSE", resp);
+				}}
+			};
+			httpsHandlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
+			{
+				{"logs", (req, resp) => {
+					if (prms.LogManagement)
+					{
+						logger.Log(8, req.Host, "INCOMMING LOG REQUEST", req);
+						DateTime? ifModified = req.GetDateHeader("If-Modified-Since");
+						string logFile = req.SubPath(1);
+
+						if ("".Equals(logFile))
+						{
+							logFile = req.GetQueryParam("delete");
+							if (logFile != null)
+							{
+								logger.DeleteLog(logFile);
+							}
+							// Get log directory
+							string[] logs;
+							StringBuilder entryBuilder = new StringBuilder();
+							if (ifModified?.CompareTo(logger.LastWriteTimeDirectory) < 0)
+							{
+								resp.Status = 304;
+								return;
+							}
+							resp.SetHeader("Content-Type", "text/html");
+							logs = logger.LogNames;
+							foreach (string log in logs)
+							{
+								entryBuilder.Append(string.Format(
+								    Resources.LOG_ENTRY,
+									log,
+									string.Format("{0:0.00}", (double)logger.LogSize(log) / 1024) + " kiB",
+									logger.LastWriteTime(log).ToString("r")
+								));
+							}
+							resp.SetBodyAndLength(Encoding.Default.GetBytes(
+							    string.Format(Resources.LOG_PAGE, entryBuilder.ToString())
+							));
+							return;
+						}
+						else
+						{
+							string enc;
+							bool exists = logger.Exists(logFile);
+							if (ifModified?.CompareTo(logger.LastWriteTime(logFile)) < 0)
+							{
+								resp.Status = 304;
+								return;
+							}
+							resp.SetHeader("Content-Type", "text/html");
+							if (exists && "".Equals(req.SubPath(2))) // Only one path level allowed
+							{
+								resp.SetHeader("Vary", "Accept-Encoding");
+								enc = UseEncoding(req);
+								if (enc != null)
+									resp.SetHeader("Content-Encoding", enc);
+
+								resp.SetBodyAndLength(logger.ReadLog(logFile, enc));
+								return;
+							}
+						}
+					}
+					resp.Status = 404;
+					resp.SetBodyAndLength(Encoding.Default.GetBytes(Resources.NON_PAGE));
+				}}
 			};
 			X509CertificateUrls urls = new X509CertificateUrls(
-				"http://" + ip + ":" + prms.Port + Resources.CA_ISSUER_PATH,
-				"http://" + ip + ":" + prms.Port + Resources.OCSP_PATH,
-				"http://" + ip + ":" + prms.Port + Resources.CRL_PATH
+				"http://" + host + ":" + prms.Port + "/" + Resources.CA_ISSUER_PATH,
+				"http://" + host + ":" + prms.Port + "/" + Resources.OCSP_PATH,
+				"http://" + host + ":" + prms.Port + "/" + Resources.CRL_PATH
 			);
 			cache = new HttpsMitmProxyCache(prms.Hostname, prms.ConfigDirectory, 500, 60000, urls);
 
 			this.prms = prms;
-		}
-
-		/* HTTP request handler callbacks */
-
-		// TODO Figure out if there are any more standardized HTTP headers to send for these responses
-		private void Favicon(HttpRequest req, HttpResponse resp)
-		{
-			resp.SetHeader("Content-Type", "image/x-icon");
-			resp.SetBodyAndLength(Resources.Get("favicon.ico"));
-			logger.Log(10, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
-		}
-
-		private void Cert(HttpRequest req, HttpResponse resp)
-		{
-			resp.SetHeader("Content-Type", "application/octet-stream");
-			resp.SetHeader("Content-Disposition", "attachment; filename=Tiriryarai.der");
-			resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
-			logger.Log(9, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
-		}
-
-		private void CaIssuer(HttpRequest req, HttpResponse resp)
-		{
-			logger.Log(9, req.Host, "INCOMMING ISSUER REQUEST", req);
-			resp.SetHeader("Content-Type", "application/pkix-cert");
-			resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
-			logger.Log(9, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
-		}
-
-		private void OCSP(HttpRequest req, HttpResponse resp)
-		{
-			logger.Log(8, req.Host, "INCOMMING OCSP REQUEST", req);
-			X509OCSPResponse ocspResp = cache.GetOCSPResponse(req);
-			resp.SetHeader("Content-Type", "application/ocsp-response");
-			resp.SetBodyAndLength(ocspResp.RawData);
-			logger.Log(8, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
-		}
-
-		private void CRL(HttpRequest req, HttpResponse resp)
-		{
-			logger.Log(8, req.Host, "INCOMMING CRL REQUEST", req);
-			X509Crl crl = cache.GetCrl();
-			resp.SetHeader("Content-Type", "application/pkix-crl");
-			resp.SetHeader("Expires", crl.ThisUpdate.ToString("r"));
-			resp.SetHeader("Last-Modified", crl.NextUpdate.ToString("r"));
-			resp.SetBodyAndLength(crl.RawData);
-			logger.Log(8, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 		}
 
 		/// <summary>
@@ -133,8 +223,7 @@ namespace Tiriryarai.Server
 		{
 			TcpListener listener = new TcpListener(IPAddress.Any, prms.Port);
 			listener.Start();
-			Console.WriteLine("Listening for connections on https://" +
-			                   prms.Hostname + ":" + prms.Port + "/");
+			Console.WriteLine("Listening for connections on " + prms.HttpsUrl);
 			while (true)
 			{
 				TcpClient client = listener.AcceptTcpClient();
@@ -207,28 +296,29 @@ namespace Tiriryarai.Server
 			HttpMessage http;
 			string host = req.Host;
 
+			Console.WriteLine("\n--------------------\n" +
+						req.Method + (tls ? " https://" : " http://") + host + req.Path);
+
 			if (!IsDestinedToMitm(req))
 			{
 				if (!prms.MitM.Block(host))
 				{
-					logger.Log(6, host, "RECEIVED REQUEST", req);
-					Console.WriteLine("\n--------------------\n" +
-					    req.Method + " https://" + host + req.Path);
+					logger.Log(3, host, "RECEIVED REQUEST", req);
 
 					http = prms.MitM.HandleRequest(req);
 					if (http is HttpRequest modified)
 					{
-						logger.Log(7, host, "MODIFIED REQUEST", modified);
+						logger.Log(12, host, "MODIFIED REQUEST", modified);
 
 						resp = new HttpsClient(host).Send(modified);
-						logger.Log(6, host, "RECEIVED RESPONSE", resp);
+						logger.Log(3, host, "RECEIVED RESPONSE", resp);
 
 						resp = prms.MitM.HandleResponse(resp, req);
-						logger.Log(7, host, "MODIFIED RESPONSE", resp);
+						logger.Log(12, host, "MODIFIED RESPONSE", resp);
 					}
 					else if (http is HttpResponse intercepted)
 					{
-						logger.Log(6, host, "CUSTOM RESPONSE", intercepted);
+						logger.Log(3, host, "CUSTOM RESPONSE", intercepted);
 						resp = intercepted;
 					}
 					else // Should never be reached
@@ -238,7 +328,7 @@ namespace Tiriryarai.Server
 				}
 				else // Host is blocked, send bad gateway
 				{
-					logger.Log(6, req.Host, "BLOCKED REQUEST", req);
+					logger.Log(3, req.Host, "BLOCKED REQUEST", req);
 					resp = new HttpResponse(502);
 				}
 			}
@@ -261,13 +351,14 @@ namespace Tiriryarai.Server
 				   host.Equals("127.0.0.1");
 		}
 
-		public HttpResponse HomePage(HttpRequest req, bool tls)
+		private HttpResponse HomePage(HttpRequest req, bool tls)
 		{
 			HttpResponse resp = new HttpResponse(200);
 			resp.SetHeader("Server", "Tiriryarai/" + Resources.Version);
 			resp.SetHeader("Date", DateTime.Now.ToString("r"));
+			resp.SetHeader("Connection", "close");
 
-			if (handlers.TryGetValue(req.Path, out Action<HttpRequest, HttpResponse> handler))
+			if (httpHandlers.TryGetValue(req.SubPath(0), out Action<HttpRequest, HttpResponse> handler))
 			{
 				handler(req, resp);
 			}
@@ -276,25 +367,71 @@ namespace Tiriryarai.Server
 				// If the client is attempting to access insecurely, show
 				// default welcome page with info.
 				resp.SetHeader("Content-Type", "text/html");
-				resp.SetHeader("Expires", new DateTime(1990, 1, 1).ToString("r"));
-				resp.SetHeader("Pragma", "no-cache");
-				resp.SetHeader("Cache-Control", "no-store, must-revalidate");
-				resp.SetBodyAndLength(Encoding.Default.GetBytes(
-					string.Format(Resources.WELCOME_PAGE, prms.Hostname, prms.Port)
-				));
+				if ("/".Equals(req.Path))
+				{
+					string httpsUrl = prms.HttpsUrl;
+					StringBuilder optBuilder = new StringBuilder();
+					if (prms.LogManagement)
+						optBuilder.Append("<li><a href=\"" + httpsUrl + "/logs\">Log Management</a></li>");
+
+					resp.SetHeader("Expires", new DateTime(1990, 1, 1).ToString("r"));
+					resp.SetHeader("Pragma", "no-cache");
+					resp.SetHeader("Cache-Control", "no-store, must-revalidate");
+					resp.SetBodyAndLength(Encoding.Default.GetBytes(
+						string.Format(
+						    Resources.WELCOME_PAGE,
+							httpsUrl,
+							optBuilder.ToString()
+						)
+					));
+				}
+				else // Redirect to root
+				{
+					resp.Status = 301;
+					resp.SetHeader("Content-Length", "0");
+					resp.SetHeader("Location", "/");
+				}
 			}
 			else if (prms.Authenticate && !req.BasicAuthenticated(prms.Username, prms.Password))
 			{
 				resp.Status = 401;
 				resp.SetHeader("Content-Type", "text/html");
-				resp.SetHeader("Content-Length", "0");
-				resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to MitM plugin homepage\"");
+				resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to admin pages\"");
+				resp.SetBodyAndLength(Encoding.Default.GetBytes(Resources.AUTH_PAGE));
+			}
+			// From here on, the client is authenticated to access configuration and plugin pages
+			else if (httpsHandlers.TryGetValue(req.SubPath(0), out Action<HttpRequest, HttpResponse> shandler))
+			{
+				shandler(req, resp);
 			}
 			else
 			{
 				resp = prms.MitM.HomePage(req);
 			}
 			return resp;
+		}
+
+		private string UseEncoding(HttpRequest req)
+		{
+			string enc = null;
+			int currPrio = -1;
+
+			// "Database" of known encodings and a subjective priority value
+			Dictionary<string, int> prioDb = new Dictionary<string, int>
+			{
+				{"gzip", 2},
+				{"deflate", 1}
+			};
+			string[] encs = req.GetHeader("Accept-Encoding");
+			for (int i = 0; i < encs?.Length; i++)
+			{
+				if (prioDb.TryGetValue(encs[i], out int p) && p > currPrio)
+				{
+					currPrio = p;
+					enc = encs[i];
+				}
+			}
+			return enc;
 		}
 	}
 }

@@ -40,6 +40,14 @@ namespace Tiriryarai.Http
 		public Method Method { get; set; }
 		public string Uri { get; set; }
 
+		public string RequestLine
+		{
+			get
+			{
+				return Method + " " + Uri + " HTTP/1.1\r\n";
+			}
+		}
+
 		/// <summary>
 		/// Gets the path in the URI relative to the hostname.
 		/// <example>
@@ -58,6 +66,38 @@ namespace Tiriryarai.Http
 				i = path.IndexOf('/');
 				return i > 0 ? path.Substring(i) : path;
 			}
+		}
+
+		/// <summary>
+		/// Gets a subpath in the URI relative to the hostname with the given level.
+		/// </summary>
+		/// <example>
+		/// http://example.org/path/to/something?a=b with level 0 becomes path
+		/// http://example.org/path/to/something?a=b with level 2 becomes something
+		/// http://example.org/path/to/something?a=b with level 3 becomes <c>string.Empty</c>
+		/// http://example.org/path/to/something?a=b with level 5 becomes <c>null</c>
+		/// </example>
+		/// <returns>The path.</returns>
+		/// <param name="level">Level.</param>
+		public string SubPath(int level)
+		{
+			string[] pathParts;
+			string path = Path;
+
+			// Append slash if not present
+			if (path[path.Length - 1] != '/')
+				path += '/';
+
+			// Remove first slash
+			if (path[0] == '/')
+				path = path.Substring(1, path.Length - 1);
+
+			pathParts = path.Split('/');
+			if (level < pathParts.Length)
+			{
+				return pathParts[level];
+			}
+			return null;
 		}
 
 		/// <summary>
@@ -145,7 +185,7 @@ namespace Tiriryarai.Http
 		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpRequest"/> to.</param>
 		public override void ToStream(Stream stream)
 		{
-			byte[] enc = Encoding.Default.GetBytes(RequestLine());
+			byte[] enc = Encoding.Default.GetBytes(RequestLine);
 			stream.Write(enc, 0, enc.Length);
 			base.ToStream(stream);
 		}
@@ -167,12 +207,7 @@ namespace Tiriryarai.Http
 		/// <returns>A <see cref="T:System.String"/> that represents the current <see cref="T:Tiriryarai.Http.HttpRequest"/>.</returns>
 		public override string ToString()
 		{
-			return RequestLine() + base.ToString();
-		}
-
-		private string RequestLine()
-		{
-			return Method + " " + Uri + " HTTP/1.1\r\n";
+			return RequestLine + base.ToString();
 		}
 	}
 }

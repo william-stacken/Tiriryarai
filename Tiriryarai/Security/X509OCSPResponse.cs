@@ -132,6 +132,34 @@ namespace Tiriryarai.Crypto
 		public string Type { get; }
 
 		/// <summary>
+		/// Gets the expiry datetime of the OCSP reqponse, which is defined as the
+		/// earliest expiry datetime among the single responses.
+		/// </summary>
+		/// <returns>The expiry datetime.</returns>
+		public DateTime ExpiryDate
+		{
+			get
+			{
+				if (Type.Equals(TYPE_BASIC_OID))
+				{
+					X509BasicOCSPResponseBuilder ocsp = Response as X509BasicOCSPResponseBuilder;
+					DateTime earliestExpiry = DateTime.MaxValue;
+
+					foreach (X509OCSPSingleResponse single in ocsp.SingleResponses)
+					{
+						if (single.NextUpdate < earliestExpiry)
+							earliestExpiry = single.NextUpdate;
+					}
+					return earliestExpiry;
+				}
+				else
+				{
+					throw new ArgumentException("Unsupported response type");
+				}
+			}
+		}
+
+		/// <summary>
 		/// Encodes the general header and signs the remaining OCSP response using
 		/// the given certificate's private key.
 		/// </summary>

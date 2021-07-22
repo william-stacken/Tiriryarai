@@ -14,6 +14,18 @@ namespace Tiriryarai.Util
 		public string Username { get; private set; }
 		public string Password { get; private set; }
 
+		/// <summary>
+		/// Gets the HTTPS URL of the MitM proxy.
+		/// </summary>
+		/// <value>The HTTPS URL.</value>
+		public string HttpsUrl
+		{
+			get
+			{
+				return "https://" + Hostname + ":" + Port;
+			}
+		}
+
 		private string host;
 
 		/// <summary>
@@ -89,6 +101,36 @@ namespace Tiriryarai.Util
 			}
 		}
 
+		private uint? maxLogSize;
+
+		/// <summary>
+		/// Gets or sets the max log size in MiB. If a log exceeds this
+		/// size, it is deleted.
+		/// </summary>
+		/// <value>The max log size in MiB.</value>
+		public uint? MaxLogSize
+		{
+			get
+			{
+				return maxLogSize ?? DefaultMaxLogSize;
+			}
+			set
+			{
+				maxLogSize = value;
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets a value indicating whether remote log management is enabled.
+		/// </summary>
+		/// <value><c>true</c> if log management is enabled; otherwise, <c>false</c>.</value>
+		public bool LogManagement { get; set; }
+
+		/// <summary>
+		/// Gets a value indicating whether HTTP basic authentication is required to access
+		/// the custom MitM plugin page and other admin pages.
+		/// </summary>
+		/// <value><c>true</c> if authentication is required; otherwise, <c>false</c>.</value>
 		public bool Authenticate { get { return Password != null; } }
 
 		private static IPAddress DefaultIPAddress
@@ -120,7 +162,12 @@ namespace Tiriryarai.Util
 
 		private static uint DefaultVerbosity
 		{
-			get { return 6; }
+			get { return 0; }
+		}
+
+		private static uint DefaultMaxLogSize
+		{
+			get { return 10; }
 		}
 
 		/// <summary>

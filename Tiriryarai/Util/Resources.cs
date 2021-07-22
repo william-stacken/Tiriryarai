@@ -31,9 +31,9 @@ namespace Tiriryarai.Util
 		public static readonly Assembly Assembly = typeof(Resources).Assembly;
 		public static readonly Version Version = Assembly.GetName().Version;
 
-		public static readonly string CA_ISSUER_PATH = "/TiriryaraiCA.crt";
-		public static readonly string OCSP_PATH = "/ocsp";
-		public static readonly string CRL_PATH = "/revoked.crl";
+		public static readonly string CA_ISSUER_PATH = "TiriryaraiCA.crt";
+		public static readonly string OCSP_PATH = "ocsp";
+		public static readonly string CRL_PATH = "revoked.crl";
 
 		public static readonly string ROOT_CA_SUBJECT_NAME =
 			"C=Tiriryarai, ST=Tiriryarai, L=Tiriryarai, O=Tiriryarai, OU=Tiriryarai CA, CN=Tiriryarai CA";
@@ -48,7 +48,7 @@ namespace Tiriryarai.Util
 		};
 		public static string OCSP_CN = "TiriryaraiCA OCSP Responder";
 
-		public static string WELCOME_PAGE =
+		private static string TEMPLATE_PAGE =
 			"<!DOCTYPE html>" +
 			"<html>" +
 			  "<head>" +
@@ -56,49 +56,70 @@ namespace Tiriryarai.Util
 				"<meta charset=\"utf-8\"/>" +
 			  "</head>" +
 			  "<body>" +
-				"<h1>Welcome to Tiriryarai!</h1>" +
-				"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
-				"<p>" +
-				  "If you're seeing this page, it means that Tiriryarai is up and running! " +
-				  "To use Tiriryarai, download the <a href=\"/cert\">CA Certificate</a>, but " +
-				  "<strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, so " +
-				  "it is recommended that you download it over a trusted network, such as your " +
-				  "own LAN. If that is not possible, please be aware of the risks involved with " +
-				  "installing the certificate." +
-				"</p>" +
-				"<p>" +
-				  "Once you have installed the certificate in your client and configured it to " +
-				  "use the proxy, you can reach the secure custom MitM plugin site <a href=\"https://{0}:{1}\">here</a>. " +
-				  "(Or if the link doesn't work, try inputting thr URL manually.)" +
-				"</p>" +
+			    "{0}" +
 			  "</body>" +
 			"</html>";
 
-		public static string AUTH_PAGE =
-			"<!DOCTYPE html>" +
-			"<html>" +
-			  "<head>" +
-				"<title>Tiriryarai</title>" +
-				"<meta charset=\"utf-8\"/>" +
-			  "</head>" +
-			  "<body>" +
-				"<h1>Welcome to Tiriryarai!</h1>" +
-				"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
-				"<p>" +
-				  "If you're seeing this page, it means that Tiriryarai is up and running! " +
-				  "To use Tiriryarai, download the <a href=\"/cert\">CA Certificate</a>, but " +
-				  "<strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, so " +
-				  "it is recommended that you download it over a trusted network, such as your " +
-				  "own LAN. If that is not possible, please be aware of the risks involved with " +
-				  "installing the certificate." +
-				"</p>" +
-				"<p>" +
-				  "Once you have installed the certificate in your client and configured it to " +
-				  "use the proxy, you can reach the secure custom MitM plugin site <a href=\"https://{0}:{1}\">here</a>. " +
-				  "(Or if the link doesn't work, try inputting thr URL manually.)" +
-				"</p>" +
-			  "</body>" +
-			"</html>";
+		public static string WELCOME_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>Welcome to Tiriryarai!</h1>" +
+			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<h3>Options</h3>" +
+			"<ul>" +
+			  "<li><a href=\"/cert\">CA Certificate</a></li>" +
+			  "<li><a href=\"{0}\">Plugin Page</a></li>" +
+			  "{1}" +
+			"</ul>" +
+			"<p>" +
+			  "If you're seeing this page, it means that Tiriryarai is up and running! " +
+			  "To use Tiriryarai, download the CA Certificate from the options menu, but " +
+			  "<strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, so " +
+			  "it is recommended that you download it over a trusted network, such as your " +
+			  "own LAN. If that is not possible, please be aware of the risks involved with " +
+			  "installing the certificate." +
+			"</p>" +
+			"<p>" +
+			  "Once you have installed the certificate in your client and configured it to " +
+			  "use the proxy, you can reach the secure custom MitM plugin site from the options menu." +
+			"</p>"
+		);
+
+		public static string AUTH_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>401 Unauthorized</h1>" +
+			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<p>Please enter your credentials to access the admin pages.</p>"
+		);
+
+		public static string NON_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>404 Not Found</h1>" +
+			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<p>That page was not found. </p>"
+		);
+
+		public static string LOG_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>Log Management</h1>" +
+			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<table style=\"width:100%\">" +
+			  "<tr>" +
+			    "<th>Host</th>" +
+				"<th>Size (kiB)</th>" +
+				"<th>Modified</th>" +
+			    "<th>Actions</th>" +
+			  "</tr>" +
+			  "{0}" +
+			"</table>"
+		);
+
+		public static string LOG_ENTRY =
+			"<tr>" +
+			  "<td><a href=\"/logs/{0}\">{0}</a></td>" +
+			  "<td>{1}</td>" +
+			  "<td>{2}</td>" +
+			  "<td>" +
+				"<form action=\"/logs?delete={0}\" method=\"post\">" +
+				  "<input type=\"submit\" value=\"Delete\"/>" +
+			    "</form>" +
+			  "</td>" +
+			"</tr>";
 
 		public static byte[] Get(string name)
 		{

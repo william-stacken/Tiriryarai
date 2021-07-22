@@ -36,9 +36,11 @@ namespace TiriryaraiMitm
 		private static string Hostname = null;
 		private static ushort Port = 8081;
 		private static uint? Verbosity = null;
+		private static uint? MaxLogSize = null;
 		private static string Username = null;
 		private static string Password = null;
 		private static string ConfigDir = null;
+		private static bool Logs = false;
 		private static bool Help = false;
 
 		/// <summary>
@@ -53,9 +55,11 @@ namespace TiriryaraiMitm
 				{ "d|hostname=", "The hostname of the server, if it has one.", (host) => Hostname = host },
 				{ "p|port=", "The port the server will listen on, 8081 by default.", (ushort port) => Port = port },
 				{ "v|verbosity=", "The higher this value is, the more information will be logged.", (uint v) => Verbosity = v },
+				{ "s|logsize=", "The maximum allowed size of a log in MiB before it is deleted.", (uint s) => MaxLogSize = s },
 				{ "u|username=", "The username required for basic HTTP authentication if one should be required.", (user) => Username = user },
 				{ "w|password=", "The password required for basic HTTP authentication if one should be required.", (pass) => Password = pass },
 				{ "c|configdir=", "The directory where certificates, server configuration, and log files will be stored.", (dir) => ConfigDir = dir },
+				{ "l|logs",  "Activate remote log management via the web interface. Usage of authentication recommended.", _ => Logs = true },
 				{ "h|help",  "Show help", _ => Help = true }
 			};
 
@@ -83,7 +87,9 @@ namespace TiriryaraiMitm
 					MitM = new MiddleMan(),
 					ConfigDirectory = ConfigDir,
 					LogVerbosity = Verbosity,
-					Hostname = Hostname
+					MaxLogSize = MaxLogSize,
+					Hostname = Hostname,
+					LogManagement = Logs
 				};
 				proxy = new HttpsMitmProxy(prms);
 			}

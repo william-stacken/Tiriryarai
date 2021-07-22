@@ -140,7 +140,7 @@ namespace Tiriryarai.Http
 		/// Gets the values of the given header.
 		/// </summary>
 		/// <returns>The values of the given header.</returns>
-		/// <param name="key">The header whose values to retreive.</param>
+		/// <param name="key">The header whose values to retrieve.</param>
 		public string[] GetHeader(string key)
 		{
 			if (key != null)
@@ -150,6 +150,22 @@ namespace Tiriryarai.Http
 					if (key.Equals(header.Key))
 						return header.Value;
 				}
+			}
+			return null;
+		}
+
+		/// <summary>
+		/// Gets the values of the given header as a date-time.
+		/// </summary>
+		/// <returns>The value of the given header as a date-time.</returns>
+		/// <param name="key">The header whose date-time value to retrieve.</param>
+		public DateTime? GetDateHeader(string key)
+		{
+			string[] dt = GetHeader(key);
+			if (dt != null && dt.Length > 1)
+			{
+				if (DateTime.TryParse(string.Join(", ", dt), out DateTime result))
+					return result;
 			}
 			return null;
 		}
@@ -285,27 +301,38 @@ namespace Tiriryarai.Http
 
 		public virtual void ToStream(Stream stream)
 		{
-			byte[] enc = Encoding.Default.GetBytes(HeadersToString());
+			byte[] enc = Encoding.Default.GetBytes(RawHeaders);
 
 			stream.Write(enc, 0, enc.Length);
 			stream.Write(Body, 0, Body.Length);
 			stream.Flush();
 		}
 
+		/// <summary>
+		/// Returns a <see cref="T:System.String"/> that represents the current <see cref="T:Tiriryarai.Http.HttpMessage"/>.
+		/// </summary>
+		/// <returns>A <see cref="T:System.String"/> that represents the current <see cref="T:Tiriryarai.Http.HttpMessage"/>.</returns>
 		public override string ToString()
 		{
-			return HeadersToString() + Encoding.Default.GetString(ContentDecodedBody);
+			return RawHeaders + Encoding.Default.GetString(ContentDecodedBody);
 		}
 
-		protected string HeadersToString()
+		/// <summary>
+		/// Returns a string representation of the HTTP headers.
+		/// </summary>
+		/// <returns>The string representation of the HTTP headers.</returns>
+		public string RawHeaders
 		{
-			StringBuilder builder = new StringBuilder();
-			foreach (KeyValuePair<string, string[]> header in Headers)
+			get
 			{
-				builder.Append(header.Key + ": " + string.Join(", ", header.Value) + "\r\n");
+				StringBuilder builder = new StringBuilder();
+				foreach (KeyValuePair<string, string[]> header in Headers)
+				{
+					builder.Append(header.Key + ": " + string.Join(", ", header.Value) + "\r\n");
+				}
+				builder.Append("\r\n");
+				return builder.ToString();
 			}
-			builder.Append("\r\n");
-			return builder.ToString();
 		}
 
 		protected static Stream Streamify(string s)
