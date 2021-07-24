@@ -84,7 +84,7 @@ namespace Tiriryarai.Server
 					}
 					resp.SetHeader("Cache-Control", "public");
 					resp.SetHeader("Content-Type", "image/x-icon");
-					resp.SetBodyAndLength(Resources.Get("favicon.ico"));
+					resp.SetDecodedBodyAndLength(Resources.Get("favicon.ico"));
 					logger.Log(15, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 				}},
 				{"cert", (req, resp) => {
@@ -96,7 +96,7 @@ namespace Tiriryarai.Server
 					resp.SetHeader("Cache-Control", "public");
 					resp.SetHeader("Content-Type", "application/octet-stream");
 					resp.SetHeader("Content-Disposition", "attachment; filename=Tiriryarai.der");
-					resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
+					resp.SetDecodedBodyAndLength(cache.GetRootCA().GetRawCertData());
 					logger.Log(15, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 				}},
 				{Resources.CA_ISSUER_PATH, (req, resp) =>
@@ -108,7 +108,7 @@ namespace Tiriryarai.Server
 						return;
 					}
 					resp.SetHeader("Content-Type", "application/pkix-cert");
-					resp.SetBodyAndLength(cache.GetRootCA().GetRawCertData());
+					resp.SetDecodedBodyAndLength(cache.GetRootCA().GetRawCertData());
 					logger.Log(15, req.Host, "OUTGOING ISSUER RESPONSE", resp);
 				}},
 				{Resources.OCSP_PATH, (req, resp) =>
@@ -121,7 +121,7 @@ namespace Tiriryarai.Server
 						return;
 					}
 					resp.SetHeader("Content-Type", "application/ocsp-response");
-					resp.SetBodyAndLength(ocspResp.RawData);
+					resp.SetDecodedBodyAndLength(ocspResp.RawData);
 					logger.Log(15, req.Host, "OUTGOING OCSP RESPONSE", resp);
 				}},
 				{Resources.CRL_PATH, (req, resp) =>
@@ -136,7 +136,7 @@ namespace Tiriryarai.Server
 					resp.SetHeader("Content-Type", "application/pkix-crl");
 					resp.SetHeader("Expires", crl.ThisUpdate.ToString("r"));
 					resp.SetHeader("Last-Modified", crl.NextUpdate.ToString("r"));
-					resp.SetBodyAndLength(crl.RawData);
+					resp.SetDecodedBodyAndLength(crl.RawData);
 					logger.Log(15, req.Host, "OUTGOING CRL RESPONSE", resp);
 				}}
 			};
@@ -175,14 +175,13 @@ namespace Tiriryarai.Server
 									logger.LastWriteTime(log).ToString("r")
 								));
 							}
-							resp.SetBodyAndLength(Encoding.Default.GetBytes(
-							    string.Format(Resources.LOG_PAGE, entryBuilder.ToString())
+							resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(
+							    string.Format(Resources.LOG_PAGE, entryBuilder)
 							));
 							return;
 						}
 						else
 						{
-							string enc;
 							bool exists = logger.Exists(logFile);
 							if (ifModified?.CompareTo(logger.LastWriteTime(logFile)) < 0)
 							{
@@ -193,17 +192,18 @@ namespace Tiriryarai.Server
 							if (exists && "".Equals(req.SubPath(2))) // Only one path level allowed
 							{
 								resp.SetHeader("Vary", "Accept-Encoding");
-								enc = UseEncoding(req);
-								if (enc != null)
-									resp.SetHeader("Content-Encoding", enc);
+								resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
+									{ ContentEncoding.GZip, 2},
+									{ ContentEncoding.Deflate, 1},
+								});
 
-								resp.SetBodyAndLength(logger.ReadLog(logFile, enc));
+								resp.SetDecodedBodyAndLength(logger.ReadLog(logFile));
 								return;
 							}
 						}
 					}
 					resp.Status = 404;
-					resp.SetBodyAndLength(Encoding.Default.GetBytes(Resources.NON_PAGE));
+					resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(Resources.NON_PAGE));
 				}}
 			};
 			X509CertificateUrls urls = new X509CertificateUrls(
@@ -377,7 +377,7 @@ namespace Tiriryarai.Server
 					resp.SetHeader("Expires", new DateTime(1990, 1, 1).ToString("r"));
 					resp.SetHeader("Pragma", "no-cache");
 					resp.SetHeader("Cache-Control", "no-store, must-revalidate");
-					resp.SetBodyAndLength(Encoding.Default.GetBytes(
+					resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(
 						string.Format(
 						    Resources.WELCOME_PAGE,
 							httpsUrl,
@@ -397,7 +397,7 @@ namespace Tiriryarai.Server
 				resp.Status = 401;
 				resp.SetHeader("Content-Type", "text/html");
 				resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to admin pages\"");
-				resp.SetBodyAndLength(Encoding.Default.GetBytes(Resources.AUTH_PAGE));
+				resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(Resources.AUTH_PAGE));
 			}
 			// From here on, the client is authenticated to access configuration and plugin pages
 			else if (httpsHandlers.TryGetValue(req.SubPath(0), out Action<HttpRequest, HttpResponse> shandler))
@@ -409,29 +409,6 @@ namespace Tiriryarai.Server
 				resp = prms.MitM.HomePage(req);
 			}
 			return resp;
-		}
-
-		private string UseEncoding(HttpRequest req)
-		{
-			string enc = null;
-			int currPrio = -1;
-
-			// "Database" of known encodings and a subjective priority value
-			Dictionary<string, int> prioDb = new Dictionary<string, int>
-			{
-				{"gzip", 2},
-				{"deflate", 1}
-			};
-			string[] encs = req.GetHeader("Accept-Encoding");
-			for (int i = 0; i < encs?.Length; i++)
-			{
-				if (prioDb.TryGetValue(encs[i], out int p) && p > currPrio)
-				{
-					currPrio = p;
-					enc = encs[i];
-				}
-			}
-			return enc;
 		}
 	}
 }

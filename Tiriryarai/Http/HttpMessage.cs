@@ -27,6 +27,18 @@ using System.Collections.Generic;
 namespace Tiriryarai.Http
 {
 	/// <summary>
+	/// An enumerable representing values for the Content-Encoding header
+	/// </summary>
+	public enum ContentEncoding
+	{
+		None = 0,
+		GZip,
+		Br,
+		Deflate,
+		UNKNOWN
+	}
+
+	/// <summary>
 	/// A class representing a generic HTTP message with only headers and
 	/// the entity body.
 	/// </summary>
@@ -37,7 +49,8 @@ namespace Tiriryarai.Http
 		public byte[] Body { get; set; }
 
 		/// <summary>
-		/// Gets the entity body without chunk encoding.
+		/// Gets or sets the entity body without chunk encoding. Will chunk
+		/// encode or decode the body according to the <code>Transfer-Encoding</code> header
 		/// </summary>
 		/// <value>The chunk decoded body.</value>
 		public byte[] ChunkDecodedBody
@@ -46,50 +59,104 @@ namespace Tiriryarai.Http
 			{
 				return Chunked ? ReadChunked(new MemoryStream(Body), false) : Body;
 			}
-		}
 
-		public byte[] ContentDecodedBody
-		{
-			get
+			set
 			{
-				byte[] chunkDecoded = ChunkDecodedBody;
-				Stream encStream;
-				string[] enc = GetHeader("Content-Encoding");
-				if (enc != null && enc.Length > 0 && enc[0] != null)
+				if (value == null)
+					throw new ArgumentNullException(nameof(value));
+
+				if (Chunked)
 				{
-					enc[0] = enc[0].ToLower().Trim();
-					if ("gzip".Equals(enc[0]))
-					{
-						encStream = new GZipStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
-					}
-					else if ("br".Equals(enc[0]))
-					{
-						// TODO Is there support for BrotliStream in Mono?
-						//encStream = new BrotliStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
-						return chunkDecoded;
-					}
-					else if ("deflate".Equals(enc[0]))
-					{
-						encStream = new DeflateStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
-					}
-					else
-					{
-						return chunkDecoded;
-					}
 					using (MemoryStream ms = new MemoryStream())
 					{
-					    encStream.CopyTo(ms);
-					    return ms.ToArray();
+						using (HttpChunkStream chunkStream = new HttpChunkStream(ms, ChunkMode.WriteEncoded))
+						{
+							chunkStream.Write(value, 0, value.Length);
+							Body = ms.ToArray();
+						}
 					}
 				}
-				return chunkDecoded;
+				else
+				{
+					Body = value;
+				}
+
 			}
 		}
 
 		/// <summary>
-		/// Gets the value of the <code>Content-Length</code> header if present; otherwise, <c>null</c>.
+		/// Gets or sets the entity body without any encoding. Will encode or decode the body
+		/// according to the <code>Content-Encoding</code> and <code>Transfer-Encoding</code> headers
 		/// </summary>
-		/// <value>The value of the <code>Content-Length</code> header if present.</value>
+		/// <value>The content decoded body.</value>
+		public byte[] DecodedBody
+		{
+			get
+			{
+				Stream encStream;
+				byte[] chunkDecoded = ChunkDecodedBody;
+				switch (ContentEncoding)
+				{
+					case ContentEncoding.GZip:
+						encStream = new GZipStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
+						break;
+					case ContentEncoding.Br:
+						// TODO Is there support for BrotliStream in Mono?
+						//encStream = new BrotliStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
+						//break;
+						return chunkDecoded;
+					case ContentEncoding.Deflate:
+						encStream = new DeflateStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
+						break;
+					default:
+						return chunkDecoded;
+				}
+				using (MemoryStream ms = new MemoryStream())
+				{
+					encStream.CopyTo(ms);
+					return ms.ToArray();
+				}
+			}
+
+			set
+			{
+				if (value == null)
+					throw new ArgumentNullException(nameof(value));
+
+				Stream encStream;
+				using (MemoryStream ms = new MemoryStream())
+				{
+					switch (ContentEncoding)
+					{
+						case ContentEncoding.GZip:
+							encStream = new GZipStream(ms, CompressionMode.Compress);
+							break;
+						case ContentEncoding.Br:
+							// TODO Is there support for BrotliStream in Mono?
+							//encStream = new BrotliStream(new MemoryStream(chunkDecoded), CompressionMode.Compress);
+							//break;
+							ChunkDecodedBody = value;
+							return;
+						case ContentEncoding.Deflate:
+							encStream = new DeflateStream(ms, CompressionMode.Compress);
+							break;
+						default:
+							ChunkDecodedBody = value;
+							return;
+					}
+					encStream.Write(value, 0, value.Length);
+					encStream.Flush();
+					encStream.Close();
+					ChunkDecodedBody = ms.ToArray();
+				}
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets the value of the <code>Content-Length</code> header. <c>null</c> means
+		/// no header or remove the header.
+		/// </summary>
+		/// <value>The value of the <code>Content-Length</code> header.</value>
 		public uint? ContentLength
 		{
 			get
@@ -101,10 +168,95 @@ namespace Tiriryarai.Http
 				}
 				return null;
 			}
+
+			set
+			{
+				string key = "Content-Length";
+				if (value != null)
+				{
+					SetHeader(key, "" + value);
+				}
+				else
+				{
+					RemoveHeader(key);
+				}
+			}
 		}
 
 		/// <summary>
-		/// Gets a value indicating whether the entity body of this <see cref="T:Tiriryarai.Http.HttpMessage"/> is chunked.
+		/// Gets or sets the value of the <code>Content-Encoding</code> header.
+		/// </summary>
+		/// <value>The enumeration of the <code>Content-Encoding</code> header.</value>
+		public ContentEncoding ContentEncoding
+		{
+			get
+			{
+				string[] enc = GetHeader("Content-Encoding");
+				if (enc != null && enc.Length > 0 && enc[0] != null)
+				{
+					if (Enum.TryParse(enc[0].Trim(), true, out ContentEncoding contentEncoding))
+					{
+						return contentEncoding;
+					}
+					return ContentEncoding.UNKNOWN;
+				}
+				return ContentEncoding.None;
+			}
+
+			set
+			{
+				string key = "Content-Encoding";
+				switch (value)
+				{
+					case ContentEncoding.GZip:
+					case ContentEncoding.Br:
+					case ContentEncoding.Deflate:
+						SetHeader(key, value.ToString().ToLower());
+						break;
+					default:
+						RemoveHeader(key);
+						break;
+				}
+			}
+		}
+
+		public ContentEncoding[] AcceptEncoding
+		{
+			get
+			{
+				List<ContentEncoding> list = new List<ContentEncoding>();
+
+				string[] encs = GetHeader("Accept-Encoding");
+				for (int i = 0; i < encs?.Length; i++)
+				{
+					if (Enum.TryParse(encs[0].Trim(), true, out ContentEncoding result))
+					{
+						list.Add(result);
+					}
+				}
+				return list.ToArray();
+			}
+
+			set
+			{
+				string key = "Accept-Encoding";
+				if (value != null && value.Length > 0)
+				{
+					string[] encs = new string[value.Length];
+					for (int i = 0; i < value.Length; i++)
+						encs[i] = value[i].ToString();
+
+					SetHeader(new KeyValuePair<string, string[]>(key, encs));
+				}
+				else
+				{
+					RemoveHeader(key);
+				}
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets a value indicating whether the entity body of this <see cref="T:Tiriryarai.Http.HttpMessage"/> is chunked.
 		/// </summary>
 		/// <value><c>true</c> if chunked; otherwise, <c>false</c>.</value>
 		public bool Chunked
@@ -121,6 +273,19 @@ namespace Tiriryarai.Http
 					}
 				}
 				return false;
+			}
+
+			set
+			{
+				string key = "Transfer-Encoding";
+				if (value)
+				{
+					SetHeader(key, "chunked");
+				}
+				else
+				{
+					RemoveHeader(key);
+				}
 			}
 		}
 
@@ -143,11 +308,12 @@ namespace Tiriryarai.Http
 		/// <param name="key">The header whose values to retrieve.</param>
 		public string[] GetHeader(string key)
 		{
+			string lower = key.ToLower();
 			if (key != null)
 			{
 				foreach (KeyValuePair<string, string[]> header in Headers)
 				{
-					if (key.Equals(header.Key))
+					if (lower.Equals(header.Key.ToLower()))
 						return header.Value;
 				}
 			}
@@ -186,9 +352,10 @@ namespace Tiriryarai.Http
 		/// <param name="header">The header and value to set.</param>
 		public void SetHeader(KeyValuePair<string, string[]> header)
 		{
+			string lower = header.Key.ToLower();
 			for (int i = 0; i < Headers.Count; i++)
 			{
-				if (Headers[i].Key.Equals(header.Key))
+				if (Headers[i].Key.ToLower().Equals(lower))
 				{
 					Headers[i] = header;
 					return;
@@ -198,14 +365,33 @@ namespace Tiriryarai.Http
 		}
 
 		/// <summary>
-		/// Sets the entity body and automatically updates or adds the <code>Content-Length</code>
-		/// header accordingly.
+		/// Removes the given header and value if present.
+		/// </summary>
+		/// <param name="header">The header to remove.</param>
+		public void RemoveHeader(string key)
+		{
+			string lower = key.ToLower();
+			for (int i = 0; i < Headers.Count; i++)
+			{
+				if (Headers[i].Key.ToLower().Equals(lower))
+				{
+					Headers.RemoveAt(i);
+					return;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Sets the decoded entity body, encodes it according to the headers, and automatically updates or adds
+		/// the <code>Content-Length</code> header to the encoded length, but only if the body does not have a
+		/// chunked transfer encoding.
 		/// </summary>
 		/// <param name="body">The new entity body.</param>
-		public void SetBodyAndLength(byte[] body)
+		public void SetDecodedBodyAndLength(byte[] body)
 		{
-			SetHeader("Content-Length", "" + body.Length);
-			Body = body;
+			DecodedBody = body;
+			if (!Chunked)
+				ContentLength = (uint) Body.Length;
 		}
 
 		/// <summary>
@@ -245,6 +431,7 @@ namespace Tiriryarai.Http
 		protected string ExtractUrlEncodedParam(string urlEncoded, string param)
 		{
 			int i;
+			string lower = param.ToLower();
 			string[] keyVals = urlEncoded.Split('&');
 			foreach (string keyVal in keyVals)
 			{
@@ -255,20 +442,47 @@ namespace Tiriryarai.Http
 				i = keyVal.IndexOf('=');
 				if (i >= 0)
 				{
-					key = keyVal.Substring(0, i);
+					key = keyVal.Substring(0, i).ToLower();
 					val = keyVal.Substring(i + 1);
 				}
 				else
 				{
-					key = keyVal;
+					key = keyVal.ToLower();
 					val = "";
 				}
-				if (key.Equals(param))
+				if (key.Equals(lower))
 				{
 					return val;
 				}
 			}
 			return null;
+		}
+
+		/// <summary>
+		/// Sets the content encoding by picking one of the encodings in the provided
+		/// <see cref="T:Tiriryarai.Http.HttpMessage"/>'s <code>Accept-Encoding</code> header.
+		/// The encoding is picked using the given dictionary contining content encodings and
+		/// a list of priority values.
+		/// </summary>
+		/// <param name="http">The <see cref="T:Tiriryarai.Http.HttpMessage"/> whose
+		/// <code>Accept-Encoding</code> header to select a content encoding from.</param>
+		/// <param name="encodings">A dictionary of content encodings mapped to priority values.
+		/// Higher values means higher priority.</param>
+		public void PickEncoding(HttpMessage http, Dictionary<ContentEncoding, int> encodings)
+		{
+			ContentEncoding enc = ContentEncoding.None;
+			int currPrio = int.MinValue;
+
+			ContentEncoding[] accepted = http.AcceptEncoding;
+			for (int i = 0; i < accepted?.Length; i++)
+			{
+				if (encodings.TryGetValue(accepted[i], out int prio) && prio > currPrio)
+				{
+					currPrio = prio;
+					enc = accepted[i];
+				}
+			}
+			ContentEncoding = enc;
 		}
 
 		protected static HttpMessage FromStream(Stream stream)
@@ -283,7 +497,7 @@ namespace Tiriryarai.Http
 			string[] keyVal;
 			string[] vals;
 
-			for (string line = ReadLine(stream); line != null && !"".Equals(line); line = ReadLine(stream))
+			for (string line = ReadLine(stream); !string.IsNullOrEmpty(line); line = ReadLine(stream))
 			{
 				int split = line.IndexOf(": ", StringComparison.Ordinal);
 				if (split < 0)
@@ -314,7 +528,7 @@ namespace Tiriryarai.Http
 		/// <returns>A <see cref="T:System.String"/> that represents the current <see cref="T:Tiriryarai.Http.HttpMessage"/>.</returns>
 		public override string ToString()
 		{
-			return RawHeaders + Encoding.Default.GetString(ContentDecodedBody);
+			return RawHeaders + Encoding.Default.GetString(DecodedBody);
 		}
 
 		/// <summary>
@@ -402,6 +616,8 @@ namespace Tiriryarai.Http
 			return http;
 		}
 
+		// TODO: This should be moved to <see cref="T:Tiriryarai.Http.HttpChunkStream"/>
+		// along with a mode optionally keep the encoding of the stream intact
 		private static byte[] ReadChunked(Stream stream, bool keepEncoding)
 		{
 			List<byte> bytesList = new List<byte>(4096);

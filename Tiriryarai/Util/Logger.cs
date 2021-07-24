@@ -82,7 +82,7 @@ namespace Tiriryarai.Util
 		/// <param name="level">The log level to use for the object.</param>
 		/// <param name="logname">The filename of the log in the log directory.</param>
 		/// <param name="head">A descriptive name for the object or log entry.</param>
-		/// <param name="req">The HTTP response to log.</param>
+		/// <param name="resp">The HTTP response to log.</param>
 		public void Log(uint level, string logname, string head, HttpResponse resp)
 		{
 			if (logDir == null)
@@ -111,7 +111,7 @@ namespace Tiriryarai.Util
 			if (level < 1 || verbosity < level)
 				return;
 
-			Log(level, logname, head, obj + "\n\n");
+			Log(level, logname, head, ToLogEntry(Encoding.Default.GetBytes(obj.ToString())) + "\n\n");
 		}
 
 		private void Log(uint level, string logname, string head, string entry)
@@ -176,9 +176,9 @@ namespace Tiriryarai.Util
 				case 1:
 				case 2:
 				case 3:
+					break;
 				case 4:
 				case 5:
-					break;
 				case 6:
 				case 7:
 					Console.WriteLine(e.Message);
@@ -273,25 +273,14 @@ namespace Tiriryarai.Util
 		}
 
 		/// <summary>
-		/// Reads the log as raw data.
-		/// </summary>
-		/// <returns>The raw log.</returns>
-		/// <param name="logname">Name of the log file.</param>
-		public byte[] ReadLog(string logname)
-		{
-			return ReadLog(logname, null);
-		}
-
-
-		/// <summary>
-		/// Reads the given log as raw data and encodes it according to the given encoding.
+		/// Reads the given log as raw data.
 		/// </summary>
 		/// <returns>The raw log.</returns>
 		/// <param name="logname">Name of the log file to read.</param>
-		/// <param name="encoding">The encoding to use. <c>"gzip"</c> and <c>"deflate"</c>
-		/// are supported. If <c>null</c>, no encoding will be used.</param>
-		public byte[] ReadLog(string logname, string encoding)
+		public byte[] ReadLog(string logname)
 		{
+			// TODO This method should be changed to write a log to a given stream instead since
+			// reading the entire log into memory is not ideal.
 			if (logDir == null)
 				throw new InvalidOperationException(UNINIT_MSG);
 
@@ -306,28 +295,14 @@ namespace Tiriryarai.Util
 			}
 			try
 			{
-				MemoryStream ms = new MemoryStream();
-				Stream encStream = null;
-				using (var fs = new FileStream(LogPath(logname), FileMode.Open))
+				using (MemoryStream ms = new MemoryStream())
 				{
-					if (encoding != null)
-					{
-						if ("gzip".Equals(encoding))
-							encStream = new GZipStream(ms, CompressionMode.Compress);
-						else if ("deflate".Equals(encoding))
-							encStream = new DeflateStream(ms, CompressionMode.Compress);
-						else
-							throw new ArgumentException("No such encoding supported: " + encoding);
-
-						fs.CopyTo(encStream);
-						encStream.Close();
-					}
-					else
+					using (var fs = new FileStream(LogPath(logname), FileMode.Open))
 					{
 						fs.CopyTo(ms);
+						return ms.ToArray();
 					}
 				}
-				return ms.ToArray();
 			}
 			finally
 			{
@@ -370,15 +345,13 @@ namespace Tiriryarai.Util
 				builder.Append(http.RawHeaders);
 			if (verbosity > 6)
 			{
-				byte[] contentDecodedBody = http.ContentDecodedBody;
+				byte[] contentDecodedBody = http.DecodedBody;
 				if (contentDecodedBody.Length > 0)
 				{
-					string htmlBody = null;
-					string category;
-					string htmlTag;
+					string htmlTag = null;
 					string type = http.GetHeader("Content-Type")?[0];
+					string category = type != null ? type.Split('/')[0].ToLower().Trim() : null;
 
-					category = type != null ? type.Split('/')[0].ToLower().Trim() : null;
 					if ("image".Equals(category))
 					{
 						htmlTag = "<img alt=\"Image\" style=\"max-width:300px;max-height:300px\" src=\"data:{0};base64,{1}\"/>";
@@ -397,21 +370,38 @@ namespace Tiriryarai.Util
 					}
 					else
 					{
-						htmlTag = "<iframe height=\"400\" width=\"100%\" src=\"data:{0};base64,{1}\">" +
-							"</iframe>";
 						// TODO Firefox treats some content types as attachments, which is why
-						// all non-text categories are treaded as plain text, should be investigated further
-						type = "text".Equals(category) ? type : "text/plain";
+						// all non-text categories are treated as plain text, should be investigated further
+						if (!"text".Equals(category))
+							type = null;
 					}
-					htmlBody = string.Format(
-						htmlTag,
-						type,
-						Convert.ToBase64String(contentDecodedBody)
-					);
-					builder.Append(htmlBody);
+					builder.Append(ToLogEntry(contentDecodedBody, type, htmlTag));
 				}
 			}
+			else if (http.Body.Length > 0)
+			{
+				builder.Append("<p style=\"color:red\">---Skipping body---.</p>");
+			}
 			return builder.ToString();
+		}
+
+		private string ToLogEntry(byte[] rawObj)
+		{
+			return ToLogEntry(rawObj, null, null);
+		}
+
+		private string ToLogEntry(byte[] rawObj, string type, string htmlTag)
+		{
+			if (type == null)
+				type = "text/plain";
+			if (htmlTag == null)
+				htmlTag = "<iframe height=\"400\" width=\"100%\" src=\"data:{0};base64,{1}\"></iframe>";
+
+			return string.Format(
+					htmlTag,
+					type,
+					Convert.ToBase64String(rawObj)
+			);
 		}
 	}
 }

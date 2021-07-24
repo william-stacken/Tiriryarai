@@ -85,8 +85,8 @@ namespace Tiriryarai.Server
 				new RemoteCertificateValidationCallback(ValidateServerCertificate),
 				null
 			);
-			sslStream.AuthenticateAsClient(client.Client.RemoteEndPoint.ToString(), null, 
-				SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12 | SslProtocols.Tls13, false);
+			sslStream.AuthenticateAsClient(hostname, null, 
+				SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12, false);
 			req.ToStream(sslStream);
 			sslStream.Flush();
 

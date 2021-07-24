@@ -50,7 +50,7 @@ namespace TiriryaraiMitm
 				// Intercept the request and return a response instead
 				HttpResponse resp = new HttpResponse(200);
 				resp.SetHeader("Content-Type", "text/html");
-				resp.SetBodyAndLength(Encoding.Default.GetBytes(
+				resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(
 					"<p>Your request was intercepted and not sent to the host!</p>"
 				));
 				return resp;
@@ -92,7 +92,7 @@ namespace TiriryaraiMitm
 				intercept = "on".Equals(req.GetBodyParam("intercept"));
 				msg = "<p style=\"color:#00FF00\";>Saved!</p>";
 			}
-			resp.SetBodyAndLength(Encoding.Default.GetBytes(string.Format(
+			resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(string.Format(
 				"<!DOCTYPE html>" +
 				"<html>" +
 				  "<head>" +

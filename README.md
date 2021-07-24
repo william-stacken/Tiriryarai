@@ -41,7 +41,7 @@ on Unix systems.
 Install **Mono** from [here](https://www.mono-project.com/download/stable/#download-lin) and run `msbuild Tiriryarai.sln`
 
 ## 4. Adding Plugins
- - Add a new .NET Console application project to the solution.
+ - Add a new .NET Console application project to the solution. Select Mono .NET Framework 4.8 as the target framework.
  - Add a reference to the `Tiriryarai` project, `System.Web`, `System.Runtime.Config`, and `Mono.Security`.
  - Create a new class that implements the [`IManInTheMiddle`](Tiriryarai/Server/IManInTheMiddle.cs) interface.
  - In the main method, create an instance of the [`HttpsMitmProxy`](Tiriryarai/Server/HttpsMitmProxy.cs) class
