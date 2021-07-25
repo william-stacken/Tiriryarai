@@ -72,7 +72,7 @@ Install **Mono** from [here](https://www.mono-project.com/download/stable/#downl
 
 [`TiriryaraiMitm`](Plugins/TiriryaraiMitm) is a dummy example plugin that can be used for reference.
 [`TuxEverywhere`](Plugins/TuxEverywhere) is another very serious plugin that illustrates what Tiriryarai
-can too.
+can too if in the wrong (right) hands.
 
 ## 6. How To Use
 Tiriryarai accepts a number of command line arguments which can configure it. For a list of those arguments, use
