@@ -18,6 +18,7 @@
 //
 
 using System;
+using System.Linq;
 using System.Collections.Generic;
 
 using Mono.Options;
@@ -79,12 +80,28 @@ namespace TiriryaraiMitm
 				Environment.Exit(-1);
 			}
 
+			// https://stackoverflow.com/questions/699852/how-to-find-all-the-classes-which-implement-a-given-interface
+			IEnumerable<IManInTheMiddle> mitms =
+			    from t in Resources.Assembly.GetTypes()
+			    where t.GetInterfaces().Contains(typeof(IManInTheMiddle))
+			          && t.GetConstructor(Type.EmptyTypes) != null
+			    select Activator.CreateInstance(t) as IManInTheMiddle;
+													  
 			HttpsMitmProxy proxy = null;
 			try
 			{
-				HttpsMitmProxyParams prms = new HttpsMitmProxyParams(Port, Username, Password)
+				if (mitms.Count() == 0)
+					throw new Exception(
+					    "No man-in-the-middle handler plugins could be found in the assembly." +
+					    "Please add a class that inplements the IManInTheMiddle interface."
+					);
+				if (mitms.Count() != 1)
+					throw new NotSupportedException(
+						"Multiple man-in-the-middle handler plugins in not supported." +
+						"Please only add one class that implements the IManInTheMiddle interface."
+					);
+				HttpsMitmProxyParams prms = new HttpsMitmProxyParams(mitms.ElementAt(0), Port, Username, Password)
 				{
-					MitM = new MiddleMan(),
 					ConfigDirectory = ConfigDir,
 					LogVerbosity = Verbosity,
 					MaxLogSize = MaxLogSize,
@@ -99,7 +116,7 @@ namespace TiriryaraiMitm
 				Environment.Exit(-2);
 			}
 			proxy.Start();
-			Console.WriteLine("Server shut down...");
+			Console.WriteLine("Tiriryarai shut down...");
 		}
 	}
 }

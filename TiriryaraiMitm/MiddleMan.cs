@@ -37,6 +37,13 @@ namespace TiriryaraiMitm
 			logger = Logger.GetSingleton();
 		}
 
+		public void Initialize(string configDir)
+		{
+			// An example of what could be done here is to create an ini
+			// file in the directory if it doesn't exist, or read
+			// configuration from it if it does exist.
+		}
+
 		public bool Block(string hostname)
 		{
 			// Block all hostnames containing "hacker"

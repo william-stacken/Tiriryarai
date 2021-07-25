@@ -74,6 +74,7 @@ namespace Tiriryarai.Server
 			    Path.Combine(prms.ConfigDirectory, "logs"),
 				(uint) prms.LogVerbosity,
 				(uint) prms.MaxLogSize);
+			prms.MitM.Initialize(prms.ConfigDirectory);
 			httpHandlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
 			{
 				{"favicon.ico", (req, resp) => {
@@ -191,12 +192,6 @@ namespace Tiriryarai.Server
 							resp.SetHeader("Content-Type", "text/html");
 							if (exists && "".Equals(req.SubPath(2))) // Only one path level allowed
 							{
-								resp.SetHeader("Vary", "Accept-Encoding");
-								resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
-									{ ContentEncoding.GZip, 2},
-									{ ContentEncoding.Deflate, 1},
-								});
-
 								resp.SetDecodedBodyAndLength(logger.ReadLog(logFile));
 								return;
 							}
@@ -357,6 +352,11 @@ namespace Tiriryarai.Server
 			resp.SetHeader("Server", "Tiriryarai/" + Resources.Version);
 			resp.SetHeader("Date", DateTime.Now.ToString("r"));
 			resp.SetHeader("Connection", "close");
+			resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
+				{ContentEncoding.GZip, 2},
+				{ContentEncoding.Deflate, 1}
+			});
+			resp.SetHeader("Vary", "Accept-Encoding");
 
 			if (httpHandlers.TryGetValue(req.SubPath(0), out Action<HttpRequest, HttpResponse> handler))
 			{

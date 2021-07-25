@@ -9,7 +9,7 @@ namespace Tiriryarai.Util
 {
 	class HttpsMitmProxyParams
 	{
-		public IManInTheMiddle MitM { get; set; }
+		public IManInTheMiddle MitM { get; }
 		public ushort Port { get; }
 		public string Username { get; private set; }
 		public string Password { get; private set; }
@@ -174,9 +174,11 @@ namespace Tiriryarai.Util
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Util.HttpsMitmProxyParams"/> class
 		/// with no authentication required.
 		/// </summary>
+		/// <param name="mitm">The man-in-the-middle-handler that will receive incomming HTTP responses and requests</param>
 		/// <param name="port">The port the server will listen on.</param>
-		public HttpsMitmProxyParams(ushort port)
+		public HttpsMitmProxyParams(IManInTheMiddle mitm, ushort port)
 		{
+			MitM = mitm;
 			Port = port;
 		}
 
@@ -184,10 +186,11 @@ namespace Tiriryarai.Util
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Util.HttpsMitmProxyParams"/> with
 		/// HTTP basic authentication when accessing the custom MitM page. class.
 		/// </summary>
+		/// <param name="mitm">The man-in-the-middle-handler that will receive incomming HTTP responses and requests</param>
 		/// <param name="port">The port the server will listen on.</param>
 		/// <param name="username">The username required for basic HTTP authentication.</param>
-		/// /// <param name="password">The password required for basic HTTP authentication.</param>
-		public HttpsMitmProxyParams(ushort port, string username, string password) : this(port)
+		/// <param name="password">The password required for basic HTTP authentication.</param>
+		public HttpsMitmProxyParams(IManInTheMiddle mitm, ushort port, string username, string password) : this(mitm, port)
 		{
 			SetCredentials(username, password);
 		}

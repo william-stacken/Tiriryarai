@@ -28,6 +28,13 @@ namespace Tiriryarai.Server
 	interface IManInTheMiddle
 	{
 		/// <summary>
+		/// Initializes the man-in-the-middle handler with a path to a directory where it may store custom
+		/// configuration. This is called directly after the constructor.
+		/// </summary>
+		/// <param name="hostname">The path to the configuration directory.</param>
+		void Initialize(string configDir);
+
+		/// <summary>
 		/// Returns a <c>bool</c> indicating whether the given host is blocked.
 		/// </summary>
 		/// <returns><code>true</code> if the host should be blocked; otherwise, <code>false</code>.</returns>

@@ -6,19 +6,23 @@ An HTTPS man-in-the-middle proxy framework written in C#.
 ## Table of Contents
  - [1. Features](#1-features)
  - [2. Files](#2-files)
- - [3. How To Build](#3-how-to-build)
-   - [3.1. Linux](#31-linux)
- - [4. Adding Plugins](#4-adding-plugins)
- - [5. How To Use](#5-how-to-use)
- - [6. License](#6-license)
+ - [3. Web Interface](#3-web-interface)
+ - [4. How To Build](#4-how-to-build)
+   - [4.1. Linux](#41-linux)
+ - [5. Adding Plugins](#5-adding-plugins)
+ - [6. How To Use](#6-how-to-use)
+ - [7. License](#7-license)
 
 ## 1. Features
 - Automated certificate creation for each host.
 - Customized plugins for automated HTTP request and response modification and interception.
 - OCSP query support (No OCSP stapling).
 - Certificate Revocation List (CRL) support.
-- Logging of HTTP requests and responses.
-- Customized web interfaces for plugin configuration with HTTP basic authentication support.
+- Logging of incomming HTTP requests and responses using different verbosity levels.
+- Web interfaces with HTTP basic authentication support.
+  - Customized web interfaces for remote plugin configuration.
+  - Web interface to view and delete logs remotely.
+
 
 ## 2. Files
 The program creates the following folders and files:
@@ -36,28 +40,30 @@ The program creates the following folders and files:
 By default, they can be found in the application data folder, which is `$HOME/.config/Tiriryarai`
 on Unix systems.
 
-## 3. How To Build
-### 3.1 Linux
+## 3. Web Interface
+
+## 4. How To Build
+### 4.1 Linux
 Install **Mono** from [here](https://www.mono-project.com/download/stable/#download-lin) and run `msbuild Tiriryarai.sln`
 
-## 4. Adding Plugins
- - Add a new .NET Console application project to the solution. Select Mono .NET Framework 4.8 as the target framework.
- - Add a reference to the `Tiriryarai` project, `System.Web`, `System.Runtime.Config`, and `Mono.Security`.
- - Create a new class that implements the [`IManInTheMiddle`](Tiriryarai/Server/IManInTheMiddle.cs) interface.
- - In the main method, create an instance of the [`HttpsMitmProxy`](Tiriryarai/Server/HttpsMitmProxy.cs) class
-   and call its `Start()` method by passing an instance of the [`HttpsMitmProxyParams`](Tiriryarai/Util/HttpsMitmProxyParams.cs)
-   class.
+## 5. Adding Plugins
+ - Add a new .NET Console application project to the solution. Select .NET Framework 4.8 as the target framework.
+ - Add a reference to the `Tiriryarai` project, `System.Web`, `System.Runtime.Config`, `Mono.Security`, and `Mono.Options`.
+ - Create a new class that implements the [`IManInTheMiddle`](Tiriryarai/Server/IManInTheMiddle.cs) interface. See
+   the link for documentation of which methods must be implemented.
 
-[`TiriryaraiMitm`](TiriryaraiMitm) contains a dummy example plugin that can be used for reference. It makes
-use of the `Mono.Options` nuget package to parse command line arguments.
+[`TiriryaraiMitm`](TiriryaraiMitm) contains a dummy example plugin that can be used for reference.
 
-## 5. How To Use
+## 6. How To Use
+Tiriryarai accepts a number of command line arguments which can configure it. For a list of those arguments, use
+the `-h` flag.
+
 The first time Tiriryarai starts up it needs to generate the `.pfx` files, which takes a few seconds. To
 use the proxy, you need to install its Root CA certificate. After Tiriryarai has started correctly, open
 `http://<your-hostname-or-ip-address>:<your-port>` and click the download link. From there, install it in
 your client. You also need to configure your client to use the proxy.
 
-## 6. License
+## 7. License
 Copyright (C) 2021 William Stackenäs <w.stackenas@gmail.com>
 
 This README file documents the use of Tiriryarai.
