@@ -24,6 +24,8 @@ using System.Text;
 using System.Globalization;
 using System.Collections.Generic;
 
+using BrotliSharpLib;
+
 namespace Tiriryarai.Http
 {
 	/// <summary>
@@ -97,19 +99,20 @@ namespace Tiriryarai.Http
 				byte[] chunkDecoded = ChunkDecodedBody;
 				switch (ContentEncoding)
 				{
+					case ContentEncoding.None:
+						return chunkDecoded;
 					case ContentEncoding.GZip:
 						encStream = new GZipStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
 						break;
 					case ContentEncoding.Br:
-						// TODO Is there support for BrotliStream in Mono?
-						//encStream = new BrotliStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
-						//break;
-						return chunkDecoded;
+						encStream = new BrotliStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
+						break;
 					case ContentEncoding.Deflate:
 						encStream = new DeflateStream(new MemoryStream(chunkDecoded), CompressionMode.Decompress);
 						break;
 					default:
-						return chunkDecoded;
+						throw new NotSupportedException("Cannot decode body, message has an unknown encoding.");
+					
 				}
 				using (MemoryStream ms = new MemoryStream())
 				{
@@ -128,21 +131,20 @@ namespace Tiriryarai.Http
 				{
 					switch (ContentEncoding)
 					{
+						case ContentEncoding.None:
+							ChunkDecodedBody = value;
+							return;
 						case ContentEncoding.GZip:
 							encStream = new GZipStream(ms, CompressionMode.Compress);
 							break;
 						case ContentEncoding.Br:
-							// TODO Is there support for BrotliStream in Mono?
-							//encStream = new BrotliStream(new MemoryStream(chunkDecoded), CompressionMode.Compress);
-							//break;
-							ChunkDecodedBody = value;
-							return;
+							encStream = new BrotliStream(ms, CompressionMode.Compress);
+							break;
 						case ContentEncoding.Deflate:
 							encStream = new DeflateStream(ms, CompressionMode.Compress);
 							break;
 						default:
-							ChunkDecodedBody = value;
-							return;
+							throw new NotSupportedException("Cannot encode body, message has an unknown encoding.");
 					}
 					encStream.Write(value, 0, value.Length);
 					encStream.Flush();
@@ -229,7 +231,7 @@ namespace Tiriryarai.Http
 				string[] encs = GetHeader("Accept-Encoding");
 				for (int i = 0; i < encs?.Length; i++)
 				{
-					if (Enum.TryParse(encs[0].Trim(), true, out ContentEncoding result))
+					if (Enum.TryParse(encs[i].Trim(), true, out ContentEncoding result))
 					{
 						list.Add(result);
 					}

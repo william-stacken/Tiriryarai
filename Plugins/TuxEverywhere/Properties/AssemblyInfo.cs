@@ -18,12 +18,13 @@
 //
 
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 // Information about this assembly is defined by the following attributes. 
 // Change them to the values specific to your project.
 
-[assembly: AssemblyTitle("Tiriryarai")]
-[assembly: AssemblyDescription("An HTTPS man-in-the-middle proxy written in C#")]
+[assembly: AssemblyTitle("TuxEverywhere")]
+[assembly: AssemblyDescription("Tux is everywhere")]
 #if (DEBUG)
 [assembly: AssemblyConfiguration("Debug")]
 #else
@@ -32,8 +33,6 @@ using System.Reflection;
 [assembly: AssemblyCompany("William Stackenäs")]
 [assembly: AssemblyProduct("Tiriryarai")]
 [assembly: AssemblyCopyright("Copyright © William Stackenäs 2021")]
-//[assembly: AssemblyTrademark("")]
-//[assembly: AssemblyCulture("")]
 
 // The assembly version has the format "{Major}.{Minor}.{Build}.{Revision}".
 // The form "{Major}.{Minor}.*" will automatically update the build and revision,

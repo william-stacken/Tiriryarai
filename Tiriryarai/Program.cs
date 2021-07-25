@@ -43,6 +43,7 @@ namespace TiriryaraiMitm
 		private static string ConfigDir = null;
 		private static bool Logs = false;
 		private static bool Help = false;
+		private static bool Version = false;
 
 		/// <summary>
 		/// The entry point of the program, where the program control starts and ends.
@@ -61,7 +62,8 @@ namespace TiriryaraiMitm
 				{ "w|password=", "The password required for basic HTTP authentication if one should be required.", (pass) => Password = pass },
 				{ "c|configdir=", "The directory where certificates, server configuration, and log files will be stored.", (dir) => ConfigDir = dir },
 				{ "l|logs",  "Activate remote log management via the web interface. Usage of authentication recommended.", _ => Logs = true },
-				{ "h|help",  "Show help", _ => Help = true }
+				{ "h|help",  "Show help", _ => Help = true },
+				{ "version",  "Show version and about info", _ => Version = true }
 			};
 
 			try
@@ -77,6 +79,16 @@ namespace TiriryaraiMitm
 			if (Help || extraOpts.Count > 0)
 			{
 				opts.WriteOptionDescriptions(Console.Out);
+				Environment.Exit(-1);
+			}
+
+			if (Version)
+			{
+				Console.WriteLine("Tiriryarai " + Resources.Version);
+				Console.WriteLine("Copyright (C) 2021 William Stackenäs");
+				Console.WriteLine("License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>");
+				Console.WriteLine("This is free software: you are free to change and redistribute it."); 
+				Console.WriteLine("There is NO WARRANTY, to the extent permitted by law.");
 				Environment.Exit(-1);
 			}
 

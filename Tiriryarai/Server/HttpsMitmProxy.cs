@@ -266,11 +266,8 @@ namespace Tiriryarai.Server
 				}
 				else
 				{
-					// TODO Either redirect the client to the host but in HTTPS using 301,
-					// or send a 405 that only CONNECT is supported. Either way, proxying
-					// non-HTTPS traffic should probably not be supported since it's kind of
-					// unorthodox and it would be tricky to support proxy authentication
-					// alongside it.
+					// If a non-CONNECT request is received, it will be proxied directly
+					// using the host header.
 					resp = HandleRequest(req, tls: false);
 					resp.ToStream(stream);
 				}
@@ -353,6 +350,7 @@ namespace Tiriryarai.Server
 			resp.SetHeader("Date", DateTime.Now.ToString("r"));
 			resp.SetHeader("Connection", "close");
 			resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
+				{ContentEncoding.Br, 3},
 				{ContentEncoding.GZip, 2},
 				{ContentEncoding.Deflate, 1}
 			});

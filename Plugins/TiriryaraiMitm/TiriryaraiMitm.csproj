@@ -33,8 +33,14 @@
     <Reference Include="Mono.Security" />
     <Reference Include="System.Web" />
     <Reference Include="System.Runtime.Caching" />
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>..\..\packages\System.Runtime.CompilerServices.Unsafe.4.5.2\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="BrotliSharpLib">
+      <HintPath>..\..\packages\BrotliSharpLib.0.3.3\lib\net451\BrotliSharpLib.dll</HintPath>
+    </Reference>
     <Reference Include="Mono.Options">
-      <HintPath>..\packages\Mono.Options.6.6.0.161\lib\net40\Mono.Options.dll</HintPath>
+      <HintPath>..\..\packages\Mono.Options.6.6.0.161\lib\net40\Mono.Options.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -44,6 +50,6 @@
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
-  <Import Project="..\Tiriryarai\Tiriryarai.projitems" Label="Shared" Condition="Exists('..\Tiriryarai\Tiriryarai.projitems')" />
+  <Import Project="..\..\Tiriryarai\Tiriryarai.projitems" Label="Shared" Condition="Exists('..\..\Tiriryarai\Tiriryarai.projitems')" />
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
 </Project>
