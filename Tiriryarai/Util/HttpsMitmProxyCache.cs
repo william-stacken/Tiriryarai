@@ -93,6 +93,7 @@ namespace Tiriryarai.Util
 
 			InitializePKCS12(rootCA, rootCA, CreateRootCertFile, GetRootCA);
 			InitializePKCS12(ocspCA, ocspCA, CreateOCSPCertFile, GetOCSPCA);
+			// TODO Check if the hostname has been updated, in which case -MitM-.pfx must be regenerated
 			InitializePKCS12(mitmHost, mitmCert, CreateCertificate, () => GetCertificate(mitmHost));
 		}
 
@@ -404,7 +405,6 @@ namespace Tiriryarai.Util
 
 			X509Certificate2 root = GetRootCA();
 			p12.AddCertificate(new X509Certificate(cb.Sign(root.PrivateKey)), attributes);
-			p12.AddCertificate(new X509Certificate(root.GetRawCertData())); // TODO Attributes? Is it even necessary to send the root certificate?
 			p12.AddPkcs8ShroudedKeyBag(subjectKey, attributes);
 
 			if (hostname.Equals(mitmHost))

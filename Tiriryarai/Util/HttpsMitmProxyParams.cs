@@ -56,7 +56,7 @@ namespace Tiriryarai.Util
 		{
 			get
 			{
-				return host ?? IP.ToString();
+				return host ?? "tiriryarai";
 			}
 			set
 			{

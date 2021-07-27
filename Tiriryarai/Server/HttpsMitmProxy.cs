@@ -58,15 +58,6 @@ namespace Tiriryarai.Server
 		/// <param name="prms">Various parameters and configuration used by the proxy.</param>
 		public HttpsMitmProxy(HttpsMitmProxyParams prms)
 		{
-			if (!prms.Authenticate)
-			{
-				Console.WriteLine(
-					"NOTICE: Authentication for accessing admin pages is disabled. " +
-					"Hosting Tiriryarai on the public internet or an untrusted network is strongly discouraged. " +
-					"If this was unintentional, see the help by using the \"-h\" flag."
-				);
-			}
-
 			string host = prms.Hostname;
 			Directory.CreateDirectory(prms.ConfigDirectory);
 			logger = Logger.GetSingleton();
@@ -202,11 +193,11 @@ namespace Tiriryarai.Server
 				}}
 			};
 			X509CertificateUrls urls = new X509CertificateUrls(
-				"http://" + host + ":" + prms.Port + "/" + Resources.CA_ISSUER_PATH,
-				"http://" + host + ":" + prms.Port + "/" + Resources.OCSP_PATH,
-				"http://" + host + ":" + prms.Port + "/" + Resources.CRL_PATH
+				"http://" + prms.IP + ":" + prms.Port + "/" + Resources.CA_ISSUER_PATH,
+				"http://" + prms.IP + ":" + prms.Port + "/" + Resources.OCSP_PATH,
+				"http://" + prms.IP + ":" + prms.Port + "/" + Resources.CRL_PATH
 			);
-			cache = new HttpsMitmProxyCache(prms.Hostname, prms.ConfigDirectory, 500, 60000, urls);
+			cache = new HttpsMitmProxyCache(host, prms.ConfigDirectory, 500, 60000, urls);
 
 			this.prms = prms;
 		}
@@ -218,7 +209,7 @@ namespace Tiriryarai.Server
 		{
 			TcpListener listener = new TcpListener(IPAddress.Any, prms.Port);
 			listener.Start();
-			Console.WriteLine("Listening for connections on " + prms.HttpsUrl);
+			PrintStartup();
 			while (true)
 			{
 				TcpClient client = listener.AcceptTcpClient();
@@ -337,7 +328,8 @@ namespace Tiriryarai.Server
 			// loopback IP, there is a risk of an infinite loop where the proxy
 			// sends requests to itself
 			string host = req.Host.Split(':')[0];
-			return host.Equals(prms.Hostname) ||
+			return host.Equals("tiriryarai") ||
+				   host.Equals(prms.Hostname) ||
 			       host.Equals(prms.IP.ToString()) ||
 				   host.Equals("localhost") ||
 				   host.Equals("127.0.0.1");
@@ -407,6 +399,70 @@ namespace Tiriryarai.Server
 				resp = prms.MitM.HomePage(req);
 			}
 			return resp;
+		}
+
+		private void PrintStartup()
+		{
+			Console.WriteLine("                                                   WWWWWWW                                          ");
+			Console.WriteLine("                                        WWNNNXXXKKK0OOkkkkOOO0KKXNNWWWWW                            ");
+			Console.WriteLine("                                WWNNNNXXXXXKKKKKKKKK00000OOOOkkkOkkkkxxkkOKXW                       ");
+			Console.WriteLine("                          WNNXXXXXXXXNNNNNNNNNNNNKK0OOOKXXXXXXNNXXXXXK0OkkxxxOKNW                   ");
+			Console.WriteLine("                     WNXKKKKKXXNNWWWWWWWWWWWWWWWN0xxOkd0XXXXXXXXXNNNNNNNNNXXKOkkOKN                 ");
+			Console.WriteLine("              NK0KNNK000KXNWWWWWWWWWWWWWWWWWWWWWXkox0OdONNNNNXXXXXXNNNNNNNNNNNNX0kkO0OkKW           ");
+			Console.WriteLine("            WKxdodxxkKNWWWWWWWWWWWWWWWWWWWWWWWWWKdoxkxdkNWWWNNNNXXXXNNNNNNNNNNNNXKx:,,,;l0W         ");
+			Console.WriteLine("          WXkoxO00OxdxOXNWWWWNNNWWWWWWWWWWWWWWWW0xk0XOooKWWWWWWNNNNNNNNXKXXNNNXOdc;codl,.,dX        ");
+			Console.WriteLine("         W0dokK0OKXXKOxxkKNWN0xx0KXNWWWWWWWWWWWNOk0XN0ocOWWWWWWWWWNNK0kolxKNKkl:coxOOo:;,..:0W      ");
+			Console.WriteLine("        N0ddOKXOkKXXXXXKOxx0X0dxOkkkkO0KXNWWWWWXkOXNXOo:dNWWWWX0Oxoooodl:d0klcoxkxdolc:::;'.;OW     ");
+			Console.WriteLine("       W0dx0KXXkxOKKKKKXXKOxkxox0KK0OkxdddONWWWKk0XXXOo;cKWNOocccldxkkxl;clcokkdollccccc::;,.;0W    ");
+			Console.WriteLine("      WKxk0KKX0ddO0000000KKKOdlokOOOO0K00xdKWWNOOXNNXOd:;kW0lokO00kxddo:,:oxkxdlccccccccc::;,'lX    ");
+			Console.WriteLine("      NOk0KKXXOodkOOOOOOOOOO0Oxdxxl:cok0KOd0WWNOOXNXXOdc,oNOoOX0ko:,;clccododxdlccccccccc:::;,:OW   ");
+			Console.WriteLine("      N0OKKXNKxoxkkkOOOOOOOkkkkkko;.':x0KKxkNWXOKXKKKOdl,:0koOKOkc'.'ldooooodxxocccccccc:::::;:OW   ");
+			Console.WriteLine("      NOOKXXN0ooxOkkkkkkkkkkkkkkkx:''lO0XXxdKWKOKK000Odo;,oll00OOo,.;xxooooooxxolcccccc::::::,;kW   ");
+			Console.WriteLine("      XkkKXNNOlokOkkkkkkkkkkkkkkkkxc:x0KXNOo0X0O0OkO0Odc''::dK0OOkl:ldooooooodxolcccc:::::;;;,,xW   ");
+			Console.WriteLine("      XkkKXNNkodkOOkkkkkkkkkkkkkkkOo:x00KX0ox0OK0kxk0x:;;,';xK0kkdccooooooolodxolcc::::::;;;;,,dW   ");
+			Console.WriteLine("      XkkKXNXxoxOOOOkkkkkkkkkkkkkkOo:dO0KXKolxOXXOxxdc;cl,.;kKOkxd:coooooooloddolcc:::::;;;;;,'dW   ");
+			Console.WriteLine("      Xkk0XNKdokOOkkOkkkkkkkkkkkkkOo:dO0KXXxloONXKKOl;clc;.;k0kxdo:cdoooollloddoc::::::;;;;;;''dN   ");
+			Console.WriteLine("      Xxx0XN0dxOOOOOOOOOkkkkkkkkkO0o:dOO0KXKxdOXKKKKd:ccc:.,oxdddo:cddooollloddlc:::::;;;;,,,''dW   ");
+			Console.WriteLine("      XxokXNKxxO0OOOOOOkkkkkkkkkkkOklldkO0K0xxKX0000d;:c::'.,clllccdxollllllodol:::::;;;,,,,,..xW   ");
+			Console.WriteLine("      NxoxKNXkxO00OOOOkkkkkkkkkkkkkkOxlldkOkokXKOOOOl;::::,..,;;:oxxoollllllodol:::;;;,,,,,,'.'xW   ");
+			Console.WriteLine("      NOodkXN0xk00OkkkkkkkkkkkkkkkkkkOOxllooo0KOkkkxc,::::;'.';lxdllllllllloddoc:;;;;;,,,,,'..;OW   ");
+			Console.WriteLine("      W0xdldO0xddl:;,,;:ldxkkkkkkkkkkkO00xlcd00kkxxd;,::;;;,.,dxc;;clllllllool:,'....'',,''..'cK    ");
+			Console.WriteLine("       XOkdlccc;'.........',:loxkkkkkkxkkOxcd0Oxxxxo,,::;;;,..:;,,,;:clc:;,'...........'''',,,dN    ");
+			Console.WriteLine("       WN0kkxdl,.':c:;.. ......':ldxxxxxxxdccxOxxddl,,::;;,...',,,,,;;,'..     .,,;;,..,;;;;:xX     ");
+			Console.WriteLine("         XOO00kc'cOOkx:..,xOd;.....;ldxxxxxoccdxdddl,,::;,...''''''....';,..   'loodo;..''''oN      ");
+			Console.WriteLine("         KxOXXKd:l0NNN0:..:oo:'.    .':oxxxxoccodxkd;'::;'...'''.....'oO0d,.  .o0KKKd:'',,,'oN      ");
+			Console.WriteLine("         KxOXXX0dod0NWWKc.  .      .''.'cdxxxoccdkkd,';;'...'''...''..,:;'.  'xNWNKxc;,',,,.lN      ");
+			Console.WriteLine("         KxOKXXKdlld0KXNNOl;'''',:cllc;'',;:ccc::odl'';'...'''..':lllc;,,,;cxKNNK0xc;'',,,,.lN      ");
+			Console.WriteLine("         KxOKKKklcclllodxkOOOOO00Okxdo:',:c:;;,,,,;;'.'...,,;:;',cdkOOOkkOOOOkxoc;;,,'.',,,.lN      ");
+			Console.WriteLine("         Xxk0K0xccllccodxxxxxxxxxxdoollllllllcc::'......,clllc:,';codxxxxddddxxdl;''''.',,,.lN      ");
+			Console.WriteLine("         Xkk0KX0oldxxdoodddddddxxdddoddddddool:,,;:;...,,;;;;;;;;;:clloooooloolc:;;;;;,,,,,.oN      ");
+			Console.WriteLine("         NkxOKXOlcdxxxxxxxdddddddddxxxxddddddc,';odoc;cc,';;:;;;;;;;;:::::::::clcc:;;;;;,,''xW      ");
+			Console.WriteLine("         NOdkKXklcdxxxxxxxxddddolloddxdddddo:,';ldxkkxoc;'',;;::::;;;;;;::::::cclcc:;;;;;,';O       ");
+			Console.WriteLine("         W0dxKXkcloodxxxxxxddlc;,,,;codddoc;',:ok000KOxoc;'',;;;::;,,,',,;::::ccll:;;;;;;,'cK       ");
+			Console.WriteLine("          XxdOKkllc;cdxxdddoc;,;coool::::,,,:ok0KOxdxO0Oxoc;,,,,,;:loc:,',::ccclll,',;;;;,,xW       ");
+			Console.WriteLine("          W0dkKOllc,;lddddlc;,;ldxOKK0kdooxk0KX0dc:cc:oOK0OkdolldkO0koc;'',::cclc;..,;:;,'cK        ");
+			Console.WriteLine("           NkdOOoc;;ccclol:,,;ldk0XXNNNNNNNNXOo;;oOOo,.,lkKXXXKKXXKKOxoc:,',:cc:,''.';:;';kW        ");
+			Console.WriteLine("            Nkdkxc;,col::;,,:oxOKXNNNNNNNKOdc,',cxKkc,....;okKXXXXXK0Okdoc;,,::;;;'.';;,,dN         ");
+			Console.WriteLine("             Nkdxd:,:odxdlcoxOKXNNNNKkdol;'...';clol;'.......,ldxO0KK0OOkxdl::clc:'.,,,;xN          ");
+			Console.WriteLine("              WKxdo::oxkKKKKXNNNNNNNKkkkkxdoc;'';:c:,....',:clloodxO000OOkkxxddol:,,,;oKW           ");
+			Console.WriteLine("                N0dc:ldkKNNNNNNNNNNNNWNNWWWWNXOd:'''..,cx0KNNNNNXXK000OOOkkxxxdol::cd0W             ");
+			Console.WriteLine("                  NK0OkxOKNNNNNNNNWNWWWNWWWWWWWWXxlc:o0NWNNNNNNXXKK000OOkkkxxxdoxO0XW               ");
+			Console.WriteLine("                      WXK0KXXNNNWWWWWWWWWWWWWWWWWWNNNNWWWNNNNNXXKK000OOkkkxxoox0W                   ");
+			Console.WriteLine("                         WNXKKXXNNNWWWWWWWWWWWWWWWWWWWWWNNNNXXKKK000OOkkxdoox0N                     ");
+			Console.WriteLine("                            WWNXXXXXXXXNNNNWWWWWWWWWWNNNNNNXXKKK00Okxdoodx0XW                       ");
+			Console.WriteLine("                                 WWNXXXKKK0000000000000OOOOkkxxdddddxkOKNW                          ");
+			Console.WriteLine("                                        WWNNXXKKK0000000000OOO00KKXNW                               ");
+			Console.WriteLine();
+			if (!prms.Authenticate)
+			{
+				Console.WriteLine("NOTICE: Authentication for accessing admin pages is disabled.");
+				Console.WriteLine("Hosting Tiriryarai on the public internet or an untrusted network is strongly discouraged.");
+				Console.WriteLine("If this was unintentional, see the help by using the \"-h\" flag.\n");
+			}
+			Console.WriteLine("###############################################");
+			Console.WriteLine("Tiriryarai has started!");
+			Console.WriteLine("Configure your client to use a HTTP proxy with IP " + prms.IP + " and port " + prms.Port + ".");
+			Console.WriteLine("Then open http://tiriryarai for more information.");
 		}
 	}
 }
