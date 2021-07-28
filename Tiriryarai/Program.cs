@@ -42,6 +42,7 @@ namespace TiriryaraiMitm
 		private static string Password = null;
 		private static string ConfigDir = null;
 		private static bool Logs = false;
+		private static bool IgnoreCerts = false;
 		private static bool Help = false;
 		private static bool Version = false;
 
@@ -62,6 +63,7 @@ namespace TiriryaraiMitm
 				{ "w|password=", "The password required for basic HTTP authentication if one should be required.", (pass) => Password = pass },
 				{ "c|configdir=", "The directory where certificates, server configuration, and log files will be stored.", (dir) => ConfigDir = dir },
 				{ "l|logs",  "Activate remote log management via the web interface. Usage of authentication recommended.", _ => Logs = true },
+				{ "i|ignorecerts",  "Ignore invalid certificates when sending HTTPS requests.", _ => IgnoreCerts = true },
 				{ "h|help",  "Show help", _ => Help = true },
 				{ "version",  "Show version and about info", _ => Version = true }
 			};
@@ -118,7 +120,8 @@ namespace TiriryaraiMitm
 					LogVerbosity = Verbosity,
 					MaxLogSize = MaxLogSize,
 					Hostname = Hostname,
-					LogManagement = Logs
+					LogManagement = Logs,
+					IgnoreCertificates = IgnoreCerts
 				};
 				proxy = new HttpsMitmProxy(prms);
 			}

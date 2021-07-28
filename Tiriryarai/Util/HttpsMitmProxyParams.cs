@@ -56,7 +56,7 @@ namespace Tiriryarai.Util
 		{
 			get
 			{
-				return host ?? "tiriryarai";
+				return host ?? IP.ToString();
 			}
 			set
 			{
@@ -144,6 +144,13 @@ namespace Tiriryarai.Util
 		/// </summary>
 		/// <value><c>true</c> if log management is enabled; otherwise, <c>false</c>.</value>
 		public bool LogManagement { get; set; }
+
+		/// <summary>
+		/// Gets or sets a value indicating whether invalid certificates should be ignored
+		/// by the HttpsClient.
+		/// </summary>
+		/// <value><c>true</c> if certificates should be ignored; otherwise, <c>false</c>.</value>
+		public bool IgnoreCertificates { get; set; }
 
 		/// <summary>
 		/// Gets a value indicating whether HTTP basic authentication is required to access

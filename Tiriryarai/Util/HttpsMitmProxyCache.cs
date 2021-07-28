@@ -56,11 +56,11 @@ namespace Tiriryarai.Util
 
 		private Logger logger;
 		private MemoryCache cache;
-		private readonly string mitmHost;
+		private readonly string[] mitmHosts;
 
-		private readonly string rootCA;
-		private readonly string ocspCA;
-		private readonly string mitmCert;
+		private readonly string storeDir;
+		private static readonly string rootCA = "-RootCA-.pfx";
+		private static readonly string ocspCA = "-OcspCA-.pfx";
 		private readonly X509CertificateUrls urls;
 
 		private ConcurrentDictionary<object, byte> mutex;
@@ -68,22 +68,20 @@ namespace Tiriryarai.Util
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Util.HttpsMitmProxyCache"/> class.
 		/// </summary>
-		/// <param name="mitmHost">Hostname of the MitM proxy.</param>
+		/// <param name="mitmHosts">Hostnames of the MitM proxy.</param>
 		/// <param name="storeDir">Path to directory where the PKCS12 files will be stored.</param>
 		/// <param name="mbMemoryLimit">Memory limit imposed on the cache in megabytes. If this limit
 		/// is breached, cache entries will be expelled.</param>
 		/// <param name="pollingInterval">The polling interval at which to check that the cache size
 		/// has not breached the limit.</param>
 		/// <param name="urls">An immutable collection of URLs used when generating certificates.</param>
-		public HttpsMitmProxyCache(string mitmHost, string storeDir, int mbMemoryLimit, int pollingInterval, X509CertificateUrls urls)
+		public HttpsMitmProxyCache(string[] mitmHosts, string storeDir, int mbMemoryLimit, int pollingInterval, X509CertificateUrls urls)
 		{
-			logger = Logger.GetSingleton();
-			this.mitmHost = mitmHost;
-			rootCA = Path.Combine(storeDir, "-RootCA-.pfx");
-			ocspCA = Path.Combine(storeDir, "-OcspCA-.pfx");
-			mitmCert = Path.Combine(storeDir, "-MitM-.pfx");
+			this.storeDir = storeDir ?? throw new ArgumentNullException(nameof(storeDir));
+			this.urls = urls ?? throw new ArgumentNullException(nameof(urls));
+			this.mitmHosts = mitmHosts ?? throw new ArgumentNullException(nameof(mitmHosts));
 
-			this.urls = urls;
+			logger = Logger.GetSingleton();
 
 			mutex = new ConcurrentDictionary<object, byte>();
 			cache = new MemoryCache("HttpsMitmProxyCache", new NameValueCollection {
@@ -91,10 +89,16 @@ namespace Tiriryarai.Util
 				{"PollingInterval", TimeSpan.FromMilliseconds(pollingInterval).ToString()},
 			});
 
-			InitializePKCS12(rootCA, rootCA, CreateRootCertFile, GetRootCA);
-			InitializePKCS12(ocspCA, ocspCA, CreateOCSPCertFile, GetOCSPCA);
-			// TODO Check if the hostname has been updated, in which case -MitM-.pfx must be regenerated
-			InitializePKCS12(mitmHost, mitmCert, CreateCertificate, () => GetCertificate(mitmHost));
+			InitializePKCS12(rootCA, Path.Combine(storeDir, rootCA), CreateRootCertFile, GetRootCA);
+			InitializePKCS12(ocspCA, Path.Combine(storeDir, ocspCA), CreateOCSPCertFile, GetOCSPCA);
+			// TODO Remove PKCS12 files that are no longer in use
+			foreach (string mitmHost in mitmHosts)
+			{
+				InitializePKCS12(mitmHost,
+				                 Path.Combine(storeDir, mitmHost + ".pfx"),
+				                 CreateCertificate,
+				                 () => GetCertificate(mitmHost));
+			}
 		}
 
 		private void InitializePKCS12(object key, string filepath, Func<object, object> pkcs12Factory, Func<X509Certificate2> pkcs12Get)
@@ -249,11 +253,8 @@ namespace Tiriryarai.Util
 			return p12;
 		}
 
-		private X509Certificate2 CreateRootCertFile(object certPath)
+		private X509Certificate2 CreateRootCertFile(object cert)
 		{
-			if (!(certPath is string path))
-				throw new ArgumentException("certPath must be a string");
-
 			byte[] rootSn = Guid.NewGuid().ToByteArray();
 			rootSn[0] &= 0x7F;
 
@@ -288,15 +289,12 @@ namespace Tiriryarai.Util
 			cb.Extensions.Add(skie);
 			cb.Extensions.Add(akie);
 
-			PKCS12 p12 = SaveToPKCS12(path, cb, rootKey);
+			PKCS12 p12 = SaveToPKCS12(Path.Combine(storeDir, rootCA), cb, rootKey);
 			return new X509Certificate2(p12.GetBytes(), Resources.PFX_PASS, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
 		}
 
-		private X509Certificate2 CreateOCSPCertFile(object certPath)
+		private X509Certificate2 CreateOCSPCertFile(object cert)
 		{
-			if (!(certPath is string path))
-				throw new ArgumentException("certPath must be a string");
-
 			byte[] ocspSn = Guid.NewGuid().ToByteArray();
 			ocspSn[0] &= 0x7F;
 
@@ -336,7 +334,7 @@ namespace Tiriryarai.Util
 			cb.Extensions.Add(skie);
 			cb.Extensions.Add(akie);
 
-			PKCS12 p12 = SaveToPKCS12(path, cb, GetRootCA().PrivateKey);
+			PKCS12 p12 = SaveToPKCS12(Path.Combine(storeDir, ocspCA), cb, GetRootCA().PrivateKey);
 			return new X509Certificate2(
 				p12.GetBytes(),
 				Resources.PFX_PASS, 
@@ -407,9 +405,12 @@ namespace Tiriryarai.Util
 			p12.AddCertificate(new X509Certificate(cb.Sign(root.PrivateKey)), attributes);
 			p12.AddPkcs8ShroudedKeyBag(subjectKey, attributes);
 
-			if (hostname.Equals(mitmHost))
+			foreach (string mitmHost in mitmHosts)
 			{
-				p12.SaveToFile(mitmCert);
+				if (hostname.Equals(mitmHost))
+				{
+					p12.SaveToFile(Path.Combine(storeDir, mitmHost + ".pfx"));
+				}
 			}
 
 			return new X509Certificate2(

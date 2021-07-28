@@ -28,7 +28,6 @@ namespace Tiriryarai.Server
 {
 	/// <summary>
 	/// A class for sending HTTP requests to hosts and retreiving HTTP responses.
-	/// WARNING: Ignores invalid certificates.
 	/// </summary>
 	class HttpsClient
 	{
@@ -40,7 +39,6 @@ namespace Tiriryarai.Server
 			X509Chain chain,
 			SslPolicyErrors sslPolicyErrors)
 		{
-			// TODO Make it possible to configure Tiriryarai to check invalid certificates
 			// WARNING: Ignore invalid certificates
 			return true;
 		}
@@ -77,14 +75,26 @@ namespace Tiriryarai.Server
 		/// <param name="req">The HTTP request to send.</param>
 		public HttpResponse Send(HttpRequest req)
 		{
+			return Send(req, false);
+		}
+
+		/// <summary>
+		/// Opens an HTTPS session to the host, sends the given HTTP request
+		/// and retreives an HTTP response.
+		/// </summary>
+		/// <returns>The retreived HTTP response.</returns>
+		/// <param name="req">The HTTP request to send.</param>
+		/// <param name="ignoreCerts">if <c>true</c>, ignore invalid certificates.</param>
+		public HttpResponse Send(HttpRequest req, bool ignoreCerts)
+		{
 			HttpResponse resp = null;
 			TcpClient client = new TcpClient(hostname, port);
-			SslStream sslStream = new SslStream(
+			SslStream sslStream = ignoreCerts ? new SslStream(
 				client.GetStream(),
 				false,
 				new RemoteCertificateValidationCallback(ValidateServerCertificate),
 				null
-			);
+			) : new SslStream(client.GetStream());
 			sslStream.AuthenticateAsClient(hostname, null, 
 				SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12 | SslProtocols.Tls13, false);
 			req.ToStream(sslStream);

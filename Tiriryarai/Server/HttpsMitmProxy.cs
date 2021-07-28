@@ -25,6 +25,7 @@ using System.Net.Security;
 using System.Collections.Generic;
 
 using System.Threading.Tasks;
+using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.IO;
 
@@ -47,6 +48,7 @@ namespace Tiriryarai.Server
 
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpHandlers;
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpsHandlers;
+		private readonly HashSet<string> pluginHosts;
 
 		private HttpsMitmProxyCache cache;
 		private Logger logger;
@@ -68,6 +70,26 @@ namespace Tiriryarai.Server
 			prms.MitM.Initialize(prms.ConfigDirectory);
 			httpHandlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
 			{
+				{"", (req, resp) => {
+					if (req.GetDateHeader("If-Modified-Since") != null)
+					{
+						resp.Status = 304;
+						return;
+					}
+					string httpsUrl = prms.HttpsUrl;
+					StringBuilder optBuilder = new StringBuilder();
+					if (prms.LogManagement)
+						optBuilder.Append("<li><a href=\"https://" + Resources.HOSTNAME + "/logs\">Log Management</a></li>");
+
+					resp.SetHeader("Content-Type", "text/html");
+					resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(
+						string.Format(
+							Resources.WELCOME_PAGE,
+							httpsUrl,
+							optBuilder.ToString()
+						)
+					));
+				}},
 				{"favicon.ico", (req, resp) => {
 					if (req.GetDateHeader("If-Modified-Since") != null)
 					{
@@ -189,15 +211,26 @@ namespace Tiriryarai.Server
 						}
 					}
 					resp.Status = 404;
+					resp.SetHeader("Content-Type", "text/html");
 					resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(Resources.NON_PAGE));
 				}}
 			};
 			X509CertificateUrls urls = new X509CertificateUrls(
-				"http://" + prms.IP + ":" + prms.Port + "/" + Resources.CA_ISSUER_PATH,
-				"http://" + prms.IP + ":" + prms.Port + "/" + Resources.OCSP_PATH,
-				"http://" + prms.IP + ":" + prms.Port + "/" + Resources.CRL_PATH
+				"http://" + Resources.HOSTNAME + "/" + Resources.CA_ISSUER_PATH,
+				"http://" + Resources.HOSTNAME + "/" + Resources.OCSP_PATH,
+				"http://" + Resources.HOSTNAME + "/" + Resources.CRL_PATH
 			);
-			cache = new HttpsMitmProxyCache(host, prms.ConfigDirectory, 500, 60000, urls);
+			cache = new HttpsMitmProxyCache(
+			    new string[] { Resources.HOSTNAME, prms.Hostname },
+				prms.ConfigDirectory, 500, 60000, urls
+			);
+			pluginHosts = new HashSet<string>
+			{
+				prms.Hostname,
+				prms.IP.ToString(),
+				"localhost",
+				"127.0.0.1"
+			};
 
 			this.prms = prms;
 		}
@@ -221,29 +254,50 @@ namespace Tiriryarai.Server
 		{
 			HttpRequest req;
 			HttpResponse resp;
-			string host = null;
+			string host;
+			X509Certificate2 cert;
+			Stream stream = client.GetStream();
 			try
 			{
-				host = null;
-				Stream stream = client.GetStream();
-
-				req = HttpRequest.FromStream(stream);
-				if (req.Method == Method.CONNECT)
+				try
+				{
+					req = HttpRequest.FromStream(stream);
+				}
+				catch (Exception e)
+				{
+					resp = DefaultHttpResponse(400);
+					resp.ToStream(stream);
+					throw e;
+				}
+				try
 				{
 					host = req.Uri.Split(':')[0];
-					X509Certificate2 cert = cache.GetCertificate(host);
-
+					cert = cache.GetCertificate(host);
+				}
+				catch (Exception e)
+				{
+					resp = DefaultHttpResponse(500, req);
+					resp.ToStream(stream);
+					throw e;
+				}
+				if (req.Method == Method.CONNECT)
+				{
 					resp = new HttpResponse(200, null, null, "Connection Established");
 					resp.ToStream(stream);
-
-					SslStream sslStream = new SslStream(stream, false);
+					SslStream sslStream = new SslStream(stream);
 					try
 					{
 						sslStream.AuthenticateAsServer(cert);
-
-						req = HttpRequest.FromStream(sslStream);
-						resp = HandleRequest(req, tls: true);
-
+						try
+						{
+							req = HttpRequest.FromStream(sslStream);
+							resp = HandleRequest(req, tls: true);
+						}
+						catch (Exception e)
+						{
+							logger.LogException(e);
+							resp = DefaultHttpResponse(400);
+						}
 						resp.ToStream(sslStream);
 					}
 					catch (Exception e)
@@ -257,15 +311,15 @@ namespace Tiriryarai.Server
 				}
 				else
 				{
-					// If a non-CONNECT request is received, it will be proxied directly
-					// using the host header.
+					// If a non-CONNECT request is received, it will be proxied
+					// directly using the host header.
 					resp = HandleRequest(req, tls: false);
 					resp.ToStream(stream);
 				}
 			}
 			catch (Exception e)
 			{
-				logger.LogException(e, host);
+				logger.LogException(e);
 			}
 			finally
 			{
@@ -277,47 +331,64 @@ namespace Tiriryarai.Server
 		{
 			HttpResponse resp;
 			HttpMessage http;
-			string host = req.Host;
-
-			Console.WriteLine("\n--------------------\n" +
-						req.Method + (tls ? " https://" : " http://") + host + req.Path);
-
-			if (!IsDestinedToMitm(req))
+			try
 			{
-				if (!prms.MitM.Block(host))
+				string host = req.Host;
+
+				Console.WriteLine("\n--------------------\n" +
+							req.Method + (tls ? " https://" : " http://") + host + req.Path);
+
+				if (!IsDestinedToMitm(req))
 				{
-					logger.Log(3, host, "RECEIVED REQUEST", req);
-
-					http = prms.MitM.HandleRequest(req);
-					if (http is HttpRequest modified)
+					if (!prms.MitM.Block(host))
 					{
-						logger.Log(12, host, "MODIFIED REQUEST", modified);
+						logger.Log(3, host, "RECEIVED REQUEST", req);
 
-						resp = new HttpsClient(host).Send(modified);
-						logger.Log(3, host, "RECEIVED RESPONSE", resp);
+						http = prms.MitM.HandleRequest(req);
+						if (http is HttpRequest modified)
+						{
+							logger.Log(12, host, "MODIFIED REQUEST", modified);
 
-						resp = prms.MitM.HandleResponse(resp, req);
-						logger.Log(12, host, "MODIFIED RESPONSE", resp);
+							try
+							{
+								resp = new HttpsClient(host).Send(modified, prms.IgnoreCertificates);
+							}
+							catch (Exception e)
+							{
+								// TODO Examine exception and return a more descriptive message
+								logger.LogException(e);
+								return DefaultHttpResponse(502);
+							}
+							logger.Log(3, host, "RECEIVED RESPONSE", resp);
+
+							resp = prms.MitM.HandleResponse(resp, req);
+							logger.Log(12, host, "MODIFIED RESPONSE", resp);
+						}
+						else if (http is HttpResponse intercepted)
+						{
+							logger.Log(3, host, "CUSTOM RESPONSE", intercepted);
+							resp = intercepted;
+						}
+						else // Should never be reached
+						{
+							throw new Exception("Invalid message type");
+						}
 					}
-					else if (http is HttpResponse intercepted)
+					else // Host is blocked, send gateway timeout
 					{
-						logger.Log(3, host, "CUSTOM RESPONSE", intercepted);
-						resp = intercepted;
-					}
-					else // Should never be reached
-					{
-						throw new Exception("Invalid message type");
+						logger.Log(3, req.Host, "BLOCKED REQUEST", req);
+						resp = new HttpResponse(504);
 					}
 				}
-				else // Host is blocked, send bad gateway
+				else
 				{
-					logger.Log(3, req.Host, "BLOCKED REQUEST", req);
-					resp = new HttpResponse(502);
+					resp = HomePage(req, tls);
 				}
 			}
-			else
+			catch (Exception e)
 			{
-				resp = HomePage(req, tls);
+				logger.LogException(e);
+				resp = DefaultHttpResponse(500, req);
 			}
 			return resp;
 		}
@@ -328,76 +399,114 @@ namespace Tiriryarai.Server
 			// loopback IP, there is a risk of an infinite loop where the proxy
 			// sends requests to itself
 			string host = req.Host.Split(':')[0];
-			return host.Equals("tiriryarai") ||
-				   host.Equals(prms.Hostname) ||
-			       host.Equals(prms.IP.ToString()) ||
-				   host.Equals("localhost") ||
-				   host.Equals("127.0.0.1");
+			return host.Equals(Resources.HOSTNAME) ||
+				   pluginHosts.Contains(host);
 		}
 
 		private HttpResponse HomePage(HttpRequest req, bool tls)
 		{
-			HttpResponse resp = new HttpResponse(200);
+			HttpResponse resp;
+			string host = req.Host.Split(':')[0];
+			if (pluginHosts.Contains(host))
+			{
+				if (!tls)
+				{
+					// If the client is attempting to access insecurely, redirect to
+					// tiriryarai welcome page with info.
+					resp = DefaultHttpResponse(301, req);
+				}
+				else if (prms.Authenticate && !req.BasicAuthenticated(prms.Username, prms.Password))
+				{
+					resp = DefaultHttpResponse(401, req);
+				}
+				// From here on, the client is authenticated to access the plugin page
+				else
+				{
+					resp = prms.MitM.HomePage(req);
+				}
+			}
+			else // Let Tiriryarai handle request
+			{
+				string rootPath = req.SubPath(0);
+				if (httpHandlers.TryGetValue(rootPath, out Action<HttpRequest, HttpResponse> handler))
+				{
+					resp = DefaultHttpResponse(200, req);
+					handler(req, resp);
+				}
+				else if (!tls)
+				{
+					// If the client is attempting to access insecurely, redirect to
+					// default welcome page with info.
+					resp = DefaultHttpResponse(301, req);
+				}
+				else if (prms.Authenticate && !req.BasicAuthenticated(prms.Username, prms.Password))
+				{
+					resp = DefaultHttpResponse(401, req);
+				}
+				// From here on, the client is authenticated to access configuration pages
+				else if (httpsHandlers.TryGetValue(rootPath, out Action<HttpRequest, HttpResponse> shandler))
+				{
+					resp = DefaultHttpResponse(200, req);
+					shandler(req, resp);
+				}
+				else
+				{
+					resp = DefaultHttpResponse(404, req);
+				}
+			}
+
+			return resp;
+		}
+
+		private HttpResponse DefaultHttpResponse(int status)
+		{
+			return DefaultHttpResponse(status, null);
+		}
+
+		private HttpResponse DefaultHttpResponse(int status, HttpRequest req)
+		{
+			string body = null;
+			HttpResponse resp = new HttpResponse(status);
 			resp.SetHeader("Server", "Tiriryarai/" + Resources.Version);
 			resp.SetHeader("Date", DateTime.Now.ToString("r"));
 			resp.SetHeader("Connection", "close");
-			resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
-				{ContentEncoding.Br, 3},
-				{ContentEncoding.GZip, 2},
-				{ContentEncoding.Deflate, 1}
-			});
-			resp.SetHeader("Vary", "Accept-Encoding");
-
-			if (httpHandlers.TryGetValue(req.SubPath(0), out Action<HttpRequest, HttpResponse> handler))
+			switch (status)
 			{
-				handler(req, resp);
+				case 301:
+					resp.SetHeader("Location", "http://" + Resources.HOSTNAME + "/");
+					body = "";
+					break;
+				case 400:
+					body = Resources.BAD_PAGE;
+					break;
+				case 401:
+					resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to admin pages\"");
+					body = Resources.AUTH_PAGE;
+					break;
+				case 404:
+					body = Resources.NON_PAGE;
+					break;
+				case 500:
+					body = Resources.ERR_PAGE;
+					break;
+				case 502:
+					body = Resources.GATE_PAGE;
+					break;
+				default:
+					// Non standardized HTTP body
+					if (req != null)
+					{
+						resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
+							{ContentEncoding.Br, 3},
+							{ContentEncoding.GZip, 2},
+							{ContentEncoding.Deflate, 1}
+						});
+						resp.SetHeader("Vary", "Accept-Encoding");
+					}
+					return resp;
 			}
-			else if (!tls)
-			{
-				// If the client is attempting to access insecurely, show
-				// default welcome page with info.
-				resp.SetHeader("Content-Type", "text/html");
-				if ("/".Equals(req.Path))
-				{
-					string httpsUrl = prms.HttpsUrl;
-					StringBuilder optBuilder = new StringBuilder();
-					if (prms.LogManagement)
-						optBuilder.Append("<li><a href=\"" + httpsUrl + "/logs\">Log Management</a></li>");
-
-					resp.SetHeader("Expires", new DateTime(1990, 1, 1).ToString("r"));
-					resp.SetHeader("Pragma", "no-cache");
-					resp.SetHeader("Cache-Control", "no-store, must-revalidate");
-					resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(
-						string.Format(
-						    Resources.WELCOME_PAGE,
-							httpsUrl,
-							optBuilder.ToString()
-						)
-					));
-				}
-				else // Redirect to root
-				{
-					resp.Status = 301;
-					resp.SetHeader("Content-Length", "0");
-					resp.SetHeader("Location", "/");
-				}
-			}
-			else if (prms.Authenticate && !req.BasicAuthenticated(prms.Username, prms.Password))
-			{
-				resp.Status = 401;
-				resp.SetHeader("Content-Type", "text/html");
-				resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to admin pages\"");
-				resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(Resources.AUTH_PAGE));
-			}
-			// From here on, the client is authenticated to access configuration and plugin pages
-			else if (httpsHandlers.TryGetValue(req.SubPath(0), out Action<HttpRequest, HttpResponse> shandler))
-			{
-				shandler(req, resp);
-			}
-			else
-			{
-				resp = prms.MitM.HomePage(req);
-			}
+			resp.SetHeader("Content-Type", "text/html");
+			resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(body));
 			return resp;
 		}
 
@@ -457,12 +566,12 @@ namespace Tiriryarai.Server
 			{
 				Console.WriteLine("NOTICE: Authentication for accessing admin pages is disabled.");
 				Console.WriteLine("Hosting Tiriryarai on the public internet or an untrusted network is strongly discouraged.");
-				Console.WriteLine("If this was unintentional, see the help by using the \"-h\" flag.\n");
+				Console.WriteLine("If this was unintentional, see the help by using the \"-h\" flag.");
+				Console.WriteLine();
 			}
-			Console.WriteLine("###############################################");
 			Console.WriteLine("Tiriryarai has started!");
-			Console.WriteLine("Configure your client to use a HTTP proxy with IP " + prms.IP + " and port " + prms.Port + ".");
-			Console.WriteLine("Then open http://tiriryarai for more information.");
+			Console.WriteLine("Configure your client to use host " + prms.Hostname + " and port " + prms.Port + " as a HTTP proxy.");
+			Console.WriteLine("Then open http://" + Resources.HOSTNAME + " for more information.");
 		}
 	}
 }

@@ -31,6 +31,7 @@ namespace Tiriryarai.Util
 		public static readonly Assembly Assembly = typeof(Resources).Assembly;
 		public static readonly Version Version = Assembly.GetName().Version;
 
+		public static readonly string HOSTNAME = "tiriryarai";
 		public static readonly string CA_ISSUER_PATH = "TiriryaraiCA.crt";
 		public static readonly string OCSP_PATH = "ocsp";
 		public static readonly string CRL_PATH = "revoked.crl";
@@ -72,15 +73,21 @@ namespace Tiriryarai.Util
 			"<p>" +
 			  "If you're seeing this page, it means that Tiriryarai is up and running! " +
 			  "To use Tiriryarai, download the CA Certificate from the options menu, but " +
-			  "<strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, so " +
-			  "it is recommended that you download it over a trusted network, such as your " +
-			  "own LAN. If that is not possible, please be aware of the risks involved with " +
-			  "installing the certificate." +
+			  "<strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, " +
+			  "(unless you are accessing this page via HTTPS already) so it is recommended " +
+			  "that you download it over a trusted network, such as your own LAN. If that is " +
+			  "not possible, please be aware of the risks involved with installing the certificate." +
 			"</p>" +
 			"<p>" +
 			  "Once you have installed the certificate in your client and configured it to " +
 			  "use the proxy, you can reach the secure custom MitM plugin site from the options menu." +
 			"</p>"
+		);
+
+		public static string BAD_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>400 Bad Request</h1>" +
+			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<p>You should check out rfc7231.</p>"
 		);
 
 		public static string AUTH_PAGE = string.Format(TEMPLATE_PAGE,
@@ -92,7 +99,23 @@ namespace Tiriryarai.Util
 		public static string NON_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>404 Not Found</h1>" +
 			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
-			"<p>That page was not found. </p>"
+			"<p>That page was not found.</p>"
+		);
+
+		public static string ERR_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>500 Internal Server Error</h1>" +
+			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<p>" +
+			  "Unfortunately that which shouldn't happen just happened. " +
+			  "For help, please post a description of what you did to cause this error " +
+			  "<a href=\"https://github.com/william-stacken/Tiriryarai/issues\">here</a>." +
+			"</p>"
+		);
+
+		public static string GATE_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>502 Bad Gateway</h1>" +
+			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<p>Failed to obtain a reply from the requested host.</p>"
 		);
 
 		public static string LOG_PAGE = string.Format(TEMPLATE_PAGE,
