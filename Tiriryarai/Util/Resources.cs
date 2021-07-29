@@ -29,7 +29,14 @@ namespace Tiriryarai.Util
 	static class Resources
 	{
 		public static readonly Assembly Assembly = typeof(Resources).Assembly;
-		public static readonly Version Version = Assembly.GetName().Version;
+		public static Version Version
+		{
+			get
+			{
+				Version v = Assembly.GetName().Version;
+				return new Version(v.Major, v.Minor);
+			}
+		}
 
 		public static readonly string HOSTNAME = "tiriryarai";
 		public static readonly string CA_ISSUER_PATH = "TiriryaraiCA.crt";
