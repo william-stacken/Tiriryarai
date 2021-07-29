@@ -44,7 +44,7 @@ using X509Certificate = Mono.Security.X509.X509Certificate;
 namespace Tiriryarai.Util
 {
 	/// <summary>
-	/// A class used for caching certificates, OCSP responses, and CRLs used by
+	/// A class used for caching certificates, OCSP responses, and other data used by
 	/// man-in-the-middle HTTPS proxies. The content will be cached and removed automatically
 	/// when expired. The cache is self-mantaining in that it shrinks itself if it
 	/// gets too large. The root CA and OCSP CA certificates will be stored on disk instead
@@ -221,8 +221,6 @@ namespace Tiriryarai.Util
 					req.Body : Convert.FromBase64String(HttpUtility.UrlDecode(req.SubPath(1)));
 
 				X509OCSPRequest ocspReq = new X509OCSPRequest(rawOcspReq);
-				// TODO X509OCSPCertID has no equals method, so is there any way for the cache to tell if an OCSP response
-				// is already present?
 				return AddOrGetExisting(ocspReq.CertificateID, CreateOCSPResponse, val => (
 				    val as X509OCSPResponse).ExpiryDate
 				) as X509OCSPResponse;
@@ -234,6 +232,17 @@ namespace Tiriryarai.Util
 			return new X509OCSPResponse(
 				new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest).Sign(GetOCSPCA())
 			);
+		}
+
+		/// <summary>
+		/// Gets the IP client statistics of the given IP.
+		/// </summary>
+		/// <returns>The IP client statistics.</returns>
+		/// <param name="req">The IP whose client statistics to obtain.</param>
+		public IpClientStats GetIPStatistics(IPAddress ip)
+		{
+			return AddOrGetExisting("$" + ip, val => new IpClientStats(), val => DateTime.Now.AddDays(14)
+			) as IpClientStats;
 		}
 
 		private static PKCS12 SaveToPKCS12(string path, X509CertificateBuilder cb, AsymmetricAlgorithm key)

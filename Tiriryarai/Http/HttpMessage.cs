@@ -397,16 +397,17 @@ namespace Tiriryarai.Http
 		}
 
 		/// <summary>
-		/// Checks if the message has HTTP basic authentication matching the
-		/// given username and password. Assumes valid username and password.
+		/// Checks if the message has HTTP basic authentication in the given header
+		/// matching the given username and password. Assumes valid username and password.
 		/// </summary>
 		/// <returns><c>true</c>, if authenticated, <c>false</c> otherwise.</returns>
+		/// <param name="header">The header that should contain the basic authentication.</param>
 		/// <param name="user">The given username.</param>
 		/// <param name="pass">The given password.</param>
-		public bool BasicAuthenticated(string user, string pass)
+		public bool BasicAuthenticated(string header, string user, string pass)
 		{
 			string[] auth;
-			string[] authArr = GetHeader("Authorization");
+			string[] authArr = GetHeader(header);
 			if (authArr != null && authArr.Length > 0 && authArr[0] != null)
 			{
 				auth = authArr[0].Split(' ');

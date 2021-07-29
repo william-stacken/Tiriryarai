@@ -255,10 +255,24 @@ namespace Tiriryarai.Server
 			HttpRequest req;
 			HttpResponse resp;
 			string host;
-			X509Certificate2 cert;
-			Stream stream = client.GetStream();
+			X509Certificate2 cert = null;
+			NetworkStream stream = client.GetStream();
+			IPAddress clientIp = (client.Client.RemoteEndPoint as IPEndPoint)?.Address;
 			try
 			{
+				if (clientIp == null)
+					throw new NullReferenceException(nameof(clientIp));
+
+				if (cache.GetIPStatistics(clientIp).IsBanned(prms.AllowedLoginAttempts))
+				{
+					resp = DefaultHttpResponse(403);
+					resp.ToStream(stream);
+					client.Close();
+					return;
+				}
+
+				if (prms.ReadTimeout > 0)
+					stream.ReadTimeout = prms.ReadTimeout;
 				try
 				{
 					req = HttpRequest.FromStream(stream);
@@ -269,19 +283,30 @@ namespace Tiriryarai.Server
 					resp.ToStream(stream);
 					throw e;
 				}
-				try
-				{
-					host = req.Uri.Split(':')[0];
-					cert = cache.GetCertificate(host);
-				}
-				catch (Exception e)
-				{
-					resp = DefaultHttpResponse(500, req);
-					resp.ToStream(stream);
-					throw e;
-				}
+
 				if (req.Method == Method.CONNECT)
 				{
+					host = req.Uri.Split(':')[0];
+					if (prms.ProxyAuthenticate &&
+					    !IsTiriryarai(host) &&
+					    !req.BasicAuthenticated("Proxy-Authorization", prms.Username, prms.ProxyPassword))
+					{
+						// Don't count login attempts here as it would be really easy to get banned by mistake otherwise
+						resp = DefaultHttpResponse(407, req);
+						resp.ToStream(stream);
+						client.Close();
+						return;
+					}
+					try
+					{
+						cert = cache.GetCertificate(host);
+					}
+					catch (Exception e)
+					{
+						resp = DefaultHttpResponse(500, req);
+						resp.ToStream(stream);
+						throw e;
+					}
 					resp = new HttpResponse(200, null, null, "Connection Established");
 					resp.ToStream(stream);
 					SslStream sslStream = new SslStream(stream);
@@ -291,7 +316,7 @@ namespace Tiriryarai.Server
 						try
 						{
 							req = HttpRequest.FromStream(sslStream);
-							resp = HandleRequest(req, tls: true);
+							resp = HandleRequest(req, host, clientIp, tls: true);
 						}
 						catch (Exception e)
 						{
@@ -313,7 +338,18 @@ namespace Tiriryarai.Server
 				{
 					// If a non-CONNECT request is received, it will be proxied
 					// directly using the host header.
-					resp = HandleRequest(req, tls: false);
+					host = req.Host.Split(':')[0];
+					if (prms.ProxyAuthenticate &&
+						!IsTiriryarai(host) &&
+						!req.BasicAuthenticated("Proxy-Authorization", prms.Username, prms.ProxyPassword))
+					{
+						// Don't count login attempts here as it would be really easy to get banned by mistake otherwise
+						resp = DefaultHttpResponse(407, req);
+					}
+					else
+					{
+						resp = HandleRequest(req, host, clientIp, tls: false);
+					}
 					resp.ToStream(stream);
 				}
 			}
@@ -327,18 +363,16 @@ namespace Tiriryarai.Server
 			}
 		}
 
-		private HttpResponse HandleRequest(HttpRequest req, bool tls)
+		private HttpResponse HandleRequest(HttpRequest req, string host, IPAddress client, bool tls)
 		{
 			HttpResponse resp;
 			HttpMessage http;
 			try
 			{
-				string host = req.Host;
-
 				Console.WriteLine("\n--------------------\n" +
 							req.Method + (tls ? " https://" : " http://") + host + req.Path);
 
-				if (!IsDestinedToMitm(req))
+				if (!IsTiriryarai(host))
 				{
 					if (!prms.MitM.Block(host))
 					{
@@ -355,7 +389,7 @@ namespace Tiriryarai.Server
 							}
 							catch (Exception e)
 							{
-								// TODO Examine exception and return a more descriptive message
+								// TODO Examine exception and return a more descriptive response
 								logger.LogException(e);
 								return DefaultHttpResponse(502);
 							}
@@ -382,7 +416,7 @@ namespace Tiriryarai.Server
 				}
 				else
 				{
-					resp = HomePage(req, tls);
+					resp = HomePage(req, client, tls);
 				}
 			}
 			catch (Exception e)
@@ -393,17 +427,16 @@ namespace Tiriryarai.Server
 			return resp;
 		}
 
-		private bool IsDestinedToMitm(HttpRequest req)
+		private bool IsTiriryarai(string host)
 		{
 			// TODO: This may not be an exhaustive list, if there is another
 			// loopback IP, there is a risk of an infinite loop where the proxy
 			// sends requests to itself
-			string host = req.Host.Split(':')[0];
 			return host.Equals(Resources.HOSTNAME) ||
 				   pluginHosts.Contains(host);
 		}
 
-		private HttpResponse HomePage(HttpRequest req, bool tls)
+		private HttpResponse HomePage(HttpRequest req, IPAddress client, bool tls)
 		{
 			HttpResponse resp;
 			string host = req.Host.Split(':')[0];
@@ -415,8 +448,9 @@ namespace Tiriryarai.Server
 					// tiriryarai welcome page with info.
 					resp = DefaultHttpResponse(301, req);
 				}
-				else if (prms.Authenticate && !req.BasicAuthenticated(prms.Username, prms.Password))
+				else if (prms.Authenticate && !req.BasicAuthenticated("Authorization", prms.Username, prms.Password))
 				{
+					cache.GetIPStatistics(client).LoginAttempt();
 					resp = DefaultHttpResponse(401, req);
 				}
 				// From here on, the client is authenticated to access the plugin page
@@ -439,8 +473,9 @@ namespace Tiriryarai.Server
 					// default welcome page with info.
 					resp = DefaultHttpResponse(301, req);
 				}
-				else if (prms.Authenticate && !req.BasicAuthenticated(prms.Username, prms.Password))
+				else if (prms.Authenticate && !req.BasicAuthenticated("Authorization", prms.Username, prms.Password))
 				{
+					cache.GetIPStatistics(client).LoginAttempt();
 					resp = DefaultHttpResponse(401, req);
 				}
 				// From here on, the client is authenticated to access configuration pages
@@ -480,11 +515,20 @@ namespace Tiriryarai.Server
 					body = Resources.BAD_PAGE;
 					break;
 				case 401:
-					resp.SetHeader("WWW-Authenticate", "Basic realm=\"Access to admin pages\"");
+					resp.SetHeader("WWW-Authenticate",
+						"Basic realm=\"Access to admin pages. This is sent securely over HTTPS.\"");
 					body = Resources.AUTH_PAGE;
+					break;
+				case 403:
+					body = Resources.FORBIDDEN_PAGE;
 					break;
 				case 404:
 					body = Resources.NON_PAGE;
+					break;
+				case 407:
+					resp.SetHeader("Proxy-Authenticate",
+					    "Basic realm=\"Use of the proxy server. This is sent insecurely over HTTP.\"");
+					body = Resources.PROXY_PAGE;
 					break;
 				case 500:
 					body = Resources.ERR_PAGE;

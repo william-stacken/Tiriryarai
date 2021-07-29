@@ -86,20 +86,29 @@ namespace Tiriryarai.Util
 
 		public static string BAD_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>400 Bad Request</h1>" +
-			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
 			"<p>You should check out rfc7231.</p>"
 		);
 
 		public static string AUTH_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>401 Unauthorized</h1>" +
-			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
 			"<p>Please enter your credentials to access the admin pages.</p>"
+		);
+
+		public static string FORBIDDEN_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>403 Forbidden</h1>" +
+			"<p>Nope.</p>"
 		);
 
 		public static string NON_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>404 Not Found</h1>" +
-			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
 			"<p>That page was not found.</p>"
+		);
+
+		public static string PROXY_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>407 Proxy Authentication Required</h1>" +
+			"<p>Please enter your credentials to use the proxy.</p>"
 		);
 
 		public static string ERR_PAGE = string.Format(TEMPLATE_PAGE,

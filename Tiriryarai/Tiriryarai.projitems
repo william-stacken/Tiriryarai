@@ -34,6 +34,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Util\HttpsMitmProxyParams.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Http\HttpChunkStream.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Program.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Util\IpClientStats.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="$(MSBuildThisFileDirectory)Security\" />

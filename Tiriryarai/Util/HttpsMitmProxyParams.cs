@@ -30,8 +30,39 @@ namespace Tiriryarai.Util
 	{
 		public IManInTheMiddle MitM { get; }
 		public ushort Port { get; }
+
+		/// <summary>
+		/// Gets the username required for HTTP basic authentication.
+		/// </summary>
 		public string Username { get; private set; }
+
+		/// <summary>
+		/// Gets the password required for HTTP basic authentication.
+		/// This password is used to access the admin pages and is only sent
+		/// over HTTPS.
+		/// </summary>
 		public string Password { get; private set; }
+
+		private string proxypass;
+		/// <summary>
+		/// Gets or sets the password required for HTTP basic authentication.
+		/// This password is for using the proxy server and is sent over
+		/// plain text HTTP. DO NOT USE THE SAME PASSWORD TO ACCESS THE ADMIN PAGES!
+		/// </summary>
+		public string ProxyPassword
+		{
+			get
+			{
+				return proxypass;
+			}
+			set
+			{
+				if (Username == null && value != null)
+					throw new ArgumentException("Cannot set proxy password, username must be given.");
+
+				proxypass = value;
+			}
+		}
 
 		/// <summary>
 		/// Gets the HTTPS URL of the MitM proxy.
@@ -157,7 +188,30 @@ namespace Tiriryarai.Util
 		/// the custom MitM plugin page and other admin pages.
 		/// </summary>
 		/// <value><c>true</c> if authentication is required; otherwise, <c>false</c>.</value>
-		public bool Authenticate { get { return Password != null; } }
+		public bool Authenticate { get { return Username != null; } }
+
+		/// <summary>
+		/// Gets a value indicating whether HTTP basic authentication is required to use
+		/// the proxy.
+		/// </summary>
+		/// <value><c>true</c> if authentication is required; otherwise, <c>false</c>.</value>
+		public bool ProxyAuthenticate { get { return ProxyPassword != null; } }
+
+		/// <summary>
+		/// Gets or sets a value indicating how many login attempts is allowed from a client
+		/// before an IP ban. If <code>Authenticate</code> is <c>false</c>, this property is
+		/// unused.
+		/// </summary>
+		/// <value>The number of allowed login attempts before an IP ban. Negative values are treated as zero.</value>
+		public int AllowedLoginAttempts { get; set; }
+
+		/// <summary>
+		/// Gets or sets a value indicating how many milliseconds the proxy will wait for incomming requests
+		/// from clients. This timeout does not apply for responses from servers.
+		/// </summary>
+		/// <value>The number of milliseconds to wait for a client request. Negative values and zero are
+		/// treated as infinite.</value>
+		public int ReadTimeout { get; set; }
 
 		private static IPAddress DefaultIPAddress
 		{

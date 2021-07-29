@@ -40,9 +40,11 @@ namespace TiriryaraiMitm
 		private static uint? MaxLogSize = null;
 		private static string Username = null;
 		private static string Password = null;
+		private static string ProxyPass = null;
 		private static string ConfigDir = null;
 		private static bool Logs = false;
 		private static bool IgnoreCerts = false;
+		private static int ReadTimeout = -1;
 		private static bool Help = false;
 		private static bool Version = false;
 
@@ -55,15 +57,21 @@ namespace TiriryaraiMitm
 			List<string> extraOpts = new List<string>();
 			OptionSet opts = new OptionSet
 			{
-				{ "d|hostname=", "The hostname of the server, if it has one.", (host) => Hostname = host },
+				{ "d|hostname=", "The hostname of the server, if it has one. If not given, it will default " +
+					"to the system IP.", (host) => Hostname = host },
 				{ "p|port=", "The port the server will listen on, 8081 by default.", (ushort port) => Port = port },
 				{ "v|verbosity=", "The higher this value is, the more information will be logged.", (uint v) => Verbosity = v },
 				{ "s|logsize=", "The maximum allowed size of a log in MiB before it is deleted.", (uint s) => MaxLogSize = s },
-				{ "u|username=", "The username required for basic HTTP authentication if one should be required.", (user) => Username = user },
-				{ "w|password=", "The password required for basic HTTP authentication if one should be required.", (pass) => Password = pass },
+				{ "u|username=", "The username required for basic HTTP authentication if one should be required. " +
+					"Used for both proxy authentication and accessing the admin pages.", (user) => Username = user },
+				{ "w|password=", "The password required for accessing the admin pages if one should be required. " +
+					"It will be sent securely using HTTPS only.", (pass) => Password = pass },
+				{ "x|proxypass=", "The password required for using the proxy if one should be required. " +
+					"It will be sent insecurely using HTTP and should not be the same as the admin password.", (pass) => ProxyPass = pass },
 				{ "c|configdir=", "The directory where certificates, server configuration, and log files will be stored.", (dir) => ConfigDir = dir },
-				{ "l|logs",  "Activate remote log management via the web interface. Usage of authentication recommended.", _ => Logs = true },
+				{ "l|logs",  "Activate admin remote log management via the web interface. Usage of authentication recommended.", _ => Logs = true },
 				{ "i|ignorecerts",  "Ignore invalid certificates when sending HTTPS requests.", _ => IgnoreCerts = true },
+				{ "t|timeout=",  "The time in milliseconds to wait on a client request before terminating the connection.", (int t) => ReadTimeout = t },
 				{ "h|help",  "Show help", _ => Help = true },
 				{ "version",  "Show version and about info", _ => Version = true }
 			};
@@ -116,12 +124,15 @@ namespace TiriryaraiMitm
 					);
 				HttpsMitmProxyParams prms = new HttpsMitmProxyParams(mitms.ElementAt(0), Port, Username, Password)
 				{
+					ProxyPassword = ProxyPass,
 					ConfigDirectory = ConfigDir,
 					LogVerbosity = Verbosity,
 					MaxLogSize = MaxLogSize,
 					Hostname = Hostname,
 					LogManagement = Logs,
-					IgnoreCertificates = IgnoreCerts
+					IgnoreCertificates = IgnoreCerts,
+					AllowedLoginAttempts = 5,
+					ReadTimeout = ReadTimeout
 				};
 				proxy = new HttpsMitmProxy(prms);
 			}
