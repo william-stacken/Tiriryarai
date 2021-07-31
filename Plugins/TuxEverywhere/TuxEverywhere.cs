@@ -36,7 +36,7 @@ namespace TuxEverywhere
 		private static readonly Random rand = new Random();
 		private static readonly HashSet<string> imgExts = new HashSet<string>
 		{
-			"jpg", "png", "svg", "gif", "bmp", "ico"
+			"jpg", "png", "svg", "gif", "bmp", "ico", "webp"
 		};
 		private static readonly string[] messages = new string[]
 		{
@@ -76,8 +76,7 @@ namespace TuxEverywhere
 
 		public HttpResponse HandleResponse(HttpResponse resp, HttpRequest req)
 		{
-			string type = resp.GetHeader("Content-Type")?[0];
-			type = type != null ? type.Split(';')[0].ToLower() : null;
+			string type = resp.ContentTypeWithoutCharset;
 			if ("text/html".Equals(type))
 			{
 				HtmlDocument htmlDoc = new HtmlDocument();
@@ -91,7 +90,7 @@ namespace TuxEverywhere
 				}
 
 			}
-			else if ("image".Equals(type?.Split('/')[0]))
+			else if ("image".Equals(type?.Split('/')?[0]))
 			{
 				return Tux(req);
 			}

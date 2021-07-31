@@ -78,16 +78,16 @@ namespace Tiriryarai.Util
 			  "{1}" +
 			"</ul>" +
 			"<p>" +
-			  "If you're seeing this page, it means that Tiriryarai is up and running! " +
-			  "To use Tiriryarai, download the CA Certificate from the options menu, but " +
-			  "<strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, " +
-			  "(unless you are accessing this page via HTTPS already) so it is recommended " +
-			  "that you download it over a trusted network, such as your own LAN. If that is " +
-			  "not possible, please be aware of the risks involved with installing the certificate." +
+			  "If you're seeing this page, it means that you have configured the proxy properly " +
+			  "in your client! To use Tiriryarai, download the CA Certificate from the options " +
+			  "menu, but <strong>PLEASE NOTE</strong> that it is downloaded insecurely using HTTP, " +
+			  "(unless you are accessing this page via HTTPS already) so it is recommended that you " +
+			  "download it over a trusted network, such as your own LAN. If that is not possible, " +
+			  "please be aware of the risks involved with installing the certificate." +
 			"</p>" +
 			"<p>" +
-			  "Once you have installed the certificate in your client and configured it to " +
-			  "use the proxy, you can reach the secure custom MitM plugin site from the options menu." +
+			  "Once you have installed the certificate in your client, you can proxy HTTPS requests " +
+			  "using Tiriryarai and reach the secure custom MitM plugin site from the options menu." +
 			"</p>"
 		);
 
@@ -113,9 +113,20 @@ namespace Tiriryarai.Util
 			"<p>That page was not found.</p>"
 		);
 
+		public static string METHOD_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>405 Method Not Allowed</h1>" +
+			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<p>Sorry, you can't do that.</p>"
+		);
+
 		public static string PROXY_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>407 Proxy Authentication Required</h1>" +
 			"<p>Please enter your credentials to use the proxy.</p>"
+		);
+
+		public static string TIMEOUT_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>408 Request Timeout</h1>" +
+			"<p>Tiriryarai fell asleep.</p>"
 		);
 
 		public static string ERR_PAGE = string.Format(TEMPLATE_PAGE,
@@ -154,8 +165,8 @@ namespace Tiriryarai.Util
 			  "<td>{1}</td>" +
 			  "<td>{2}</td>" +
 			  "<td>" +
-				"<form action=\"/logs?delete={0}\" method=\"post\">" +
-				  "<input type=\"submit\" value=\"Delete\"/>" +
+				"<form action=\"/logs/{0}\" method=\"post\">" +
+				  "<input type=\"submit\" name=\"submit\" value=\"Delete\"/>" +
 			    "</form>" +
 			  "</td>" +
 			"</tr>";

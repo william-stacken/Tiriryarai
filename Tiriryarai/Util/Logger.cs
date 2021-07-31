@@ -368,7 +368,7 @@ namespace Tiriryarai.Util
 				if (contentDecodedBody.Length > 0)
 				{
 					string htmlTag = null;
-					string type = http.GetHeader("Content-Type")?[0];
+					string type = http.ContentTypeWithoutCharset;
 					string category = type != null ? type.Split('/')[0].ToLower().Trim() : null;
 
 					if ("image".Equals(category))

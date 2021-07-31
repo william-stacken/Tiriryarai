@@ -18,6 +18,7 @@
 //
 
 using System;
+using System.Web;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -185,6 +186,15 @@ namespace Tiriryarai.Http
 			}
 		}
 
+		public string ContentTypeWithoutCharset
+		{
+			get
+			{
+				string type = GetHeader("Content-Type")?[0];
+				return type != null ? type.Split(';')[0].ToLower() : null;
+			}
+		}
+
 		/// <summary>
 		/// Gets or sets the value of the <code>Content-Encoding</code> header.
 		/// </summary>
@@ -222,6 +232,10 @@ namespace Tiriryarai.Http
 			}
 		}
 
+		/// <summary>
+		/// Gets or sets the values of the <code>Accept-Encoding</code> header.
+		/// </summary>
+		/// <value>The enumerations of the <code>Accept-Encoding</code> header.</value>
 		public ContentEncoding[] AcceptEncoding
 		{
 			get
@@ -249,6 +263,45 @@ namespace Tiriryarai.Http
 						encs[i] = value[i].ToString();
 
 					SetHeader(new KeyValuePair<string, string[]>(key, encs));
+				}
+				else
+				{
+					RemoveHeader(key);
+				}
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets the values of the <code>Allow</code> header.
+		/// </summary>
+		/// <value>The enumerations of the <code>Allow</code> header.</value>
+		public Method[] Allow
+		{
+			get
+			{
+				List<Method> list = new List<Method>();
+
+				string[] allw = GetHeader("Allow");
+				for (int i = 0; i < allw?.Length; i++)
+				{
+					if (Enum.TryParse(allw[i].Trim(), true, out Method result))
+					{
+						list.Add(result);
+					}
+				}
+				return list.ToArray();
+			}
+
+			set
+			{
+				string key = "Allow";
+				if (value != null && value.Length > 0)
+				{
+					string[] allw = new string[value.Length];
+					for (int i = 0; i < value.Length; i++)
+						allw[i] = value[i].ToString();
+
+					SetHeader(new KeyValuePair<string, string[]>(key, allw));
 				}
 				else
 				{
@@ -422,13 +475,14 @@ namespace Tiriryarai.Http
 		}
 
 		/// <summary>
-		/// Treats the entity body as form-encoded a string and retrives the value of a given parameter.
+		/// Treats the entity body as a form-encoded string and retrives the URL decoded
+		/// value of a given parameter.
 		/// </summary>
 		/// <returns>The value of the parameter if it exists; otherwise, <c>null</c>.</returns>
 		/// <param name="param">The parameter to retrieve.</param>
 		public string GetBodyParam(string param)
 		{
-			return ExtractUrlEncodedParam(Encoding.Default.GetString(Body), param);
+			return ExtractUrlEncodedParam(Encoding.Default.GetString(DecodedBody), param);
 		}
 
 		protected string ExtractUrlEncodedParam(string urlEncoded, string param)
@@ -455,7 +509,7 @@ namespace Tiriryarai.Http
 				}
 				if (key.Equals(lower))
 				{
-					return val;
+					return HttpUtility.UrlDecode(val);
 				}
 			}
 			return null;
@@ -564,7 +618,7 @@ namespace Tiriryarai.Http
 
 		protected static string ReadLine(Stream stream)
 		{
-			return ReadLine(stream, 4096);
+			return ReadLine(stream, 8192);
 		}
 
 		protected static string ReadLine(Stream stream, int maxLen)

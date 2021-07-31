@@ -19,7 +19,6 @@
 
 using System;
 using System.Net;
-using System.Web;
 using System.IO;
 using System.Threading;
 using System.Collections;
@@ -32,10 +31,7 @@ using System.Security.Cryptography.X509Certificates;
 using Mono.Security.X509;
 using Mono.Security.X509.Extensions;
 
-using Tiriryarai.Http;
 using Tiriryarai.Crypto;
-
-using HttpRequest = Tiriryarai.Http.HttpRequest;
 
 using CRLDistributionPointsExtension = Tiriryarai.Crypto.CRLDistributionPointsExtension;
 using KeyUsageExtension = Tiriryarai.Crypto.KeyUsageExtension;
@@ -91,13 +87,31 @@ namespace Tiriryarai.Util
 
 			InitializePKCS12(rootCA, Path.Combine(storeDir, rootCA), CreateRootCertFile, GetRootCA);
 			InitializePKCS12(ocspCA, Path.Combine(storeDir, ocspCA), CreateOCSPCertFile, GetOCSPCA);
-			// TODO Remove PKCS12 files that are no longer in use
+
 			foreach (string mitmHost in mitmHosts)
 			{
 				InitializePKCS12(mitmHost,
 				                 Path.Combine(storeDir, mitmHost + ".pfx"),
 				                 CreateCertificate,
 				                 () => GetCertificate(mitmHost));
+			}
+
+			// Remove PKCS12 files that are no longer in use
+			foreach (string pfxFile in Directory.GetFiles(storeDir, "*.pfx"))
+			{
+				bool isUnused = true;
+				string name = Path.GetFileNameWithoutExtension(pfxFile);
+				if (!name.Equals("-RootCA-") && !name.Equals("-OcspCA-"))
+				{
+					for (int i = 0; isUnused && i < mitmHosts.Length; i++)
+					{
+						isUnused = !name.Equals(mitmHosts[i]);
+					}
+					if (isUnused)
+					{
+						File.Delete(pfxFile);
+					}
+				}
 			}
 		}
 
@@ -209,29 +223,13 @@ namespace Tiriryarai.Util
 		/// new one will be created and signed by the OCSP CA automatically.
 		/// </summary>
 		/// <returns>The OCSP Response.</returns>
-		/// <param name="req">An HTTP request with an OCSP request contained in it's entity body,
-		/// whose given certificate is to be checked for revocation.</param>
-		public X509OCSPResponse GetOCSPResponse(HttpRequest req)
+		/// <param name="ocspReq">An OCSP request whose given certificate
+		/// is to be checked for revocation.</param>
+		public X509OCSPResponse GetOCSPResponse(X509OCSPRequest ocspReq)
 		{
-			try
-			{
-				// Fetch the OCSP request from the URI as base64 if the content type isn't an
-				// OCSP request.
-				byte[] rawOcspReq = "application/ocsp-request".Equals(req.GetHeader("Content-Type")?[0]) ?
-					req.Body : Convert.FromBase64String(HttpUtility.UrlDecode(req.SubPath(1)));
-
-				X509OCSPRequest ocspReq = new X509OCSPRequest(rawOcspReq);
-				return AddOrGetExisting(ocspReq.CertificateID, CreateOCSPResponse, val => (
-				    val as X509OCSPResponse).ExpiryDate
-				) as X509OCSPResponse;
-			}
-			catch (Exception e)
-			{
-				logger.LogException(e, req);
-			}
-			return new X509OCSPResponse(
-				new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest).Sign(GetOCSPCA())
-			);
+			return AddOrGetExisting(ocspReq.CertificateID, CreateOCSPResponse, val => (
+			    val as X509OCSPResponse).ExpiryDate
+			) as X509OCSPResponse;
 		}
 
 		/// <summary>
@@ -241,11 +239,15 @@ namespace Tiriryarai.Util
 		/// <param name="req">The IP whose client statistics to obtain.</param>
 		public IpClientStats GetIPStatistics(IPAddress ip)
 		{
+			// TODO Expire statistics after 14 days, maybe there is a better time frame?
 			return AddOrGetExisting("$" + ip, val => new IpClientStats(), val => DateTime.Now.AddDays(14)
 			) as IpClientStats;
 		}
 
-		private static PKCS12 SaveToPKCS12(string path, X509CertificateBuilder cb, AsymmetricAlgorithm key)
+		private static PKCS12 SaveToPKCS12(string path,
+		                                   X509CertificateBuilder cb,
+		                                   AsymmetricAlgorithm subjectKey,
+		                                   AsymmetricAlgorithm issuerKey)
 		{
 			PKCS12 p12 = new PKCS12();
 			p12.Password = Resources.PFX_PASS;
@@ -255,8 +257,8 @@ namespace Tiriryarai.Util
 			Hashtable attributes = new Hashtable(1);
 			attributes.Add(PKCS9.localKeyId, list);
 
-			p12.AddCertificate(new X509Certificate(cb.Sign(key)), attributes);
-			p12.AddPkcs8ShroudedKeyBag(key, attributes);
+			p12.AddCertificate(new X509Certificate(cb.Sign(issuerKey)), attributes);
+			p12.AddPkcs8ShroudedKeyBag(subjectKey, attributes);
 			p12.SaveToFile(path);
 
 			return p12;
@@ -298,7 +300,7 @@ namespace Tiriryarai.Util
 			cb.Extensions.Add(skie);
 			cb.Extensions.Add(akie);
 
-			PKCS12 p12 = SaveToPKCS12(Path.Combine(storeDir, rootCA), cb, rootKey);
+			PKCS12 p12 = SaveToPKCS12(Path.Combine(storeDir, rootCA), cb, rootKey, rootKey);
 			return new X509Certificate2(p12.GetBytes(), Resources.PFX_PASS, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
 		}
 
@@ -343,7 +345,7 @@ namespace Tiriryarai.Util
 			cb.Extensions.Add(skie);
 			cb.Extensions.Add(akie);
 
-			PKCS12 p12 = SaveToPKCS12(Path.Combine(storeDir, ocspCA), cb, GetRootCA().PrivateKey);
+			PKCS12 p12 = SaveToPKCS12(Path.Combine(storeDir, ocspCA), cb, ocspKey, GetRootCA().PrivateKey);
 			return new X509Certificate2(
 				p12.GetBytes(),
 				Resources.PFX_PASS, 
@@ -458,9 +460,9 @@ namespace Tiriryarai.Util
 				throw new ArgumentException("id must be a X509OCSPCertID");
 
 			X509OCSPResponse ocsp;
+			X509Certificate2 ca = GetOCSPCA();
 			try
 			{
-				X509Certificate2 ca = GetOCSPCA();
 				X509BasicOCSPResponseBuilder builder = new X509BasicOCSPResponseBuilder
 				{
 					Name = string.Format(Resources.CERT_SUBJECT_NAME, "TiriryaraiCA OCSP Responder"),
@@ -481,7 +483,7 @@ namespace Tiriryarai.Util
 				logger.LogException(e, certId);
 				ocsp = new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest);
 			}
-			return new X509OCSPResponse(ocsp.Sign(GetOCSPCA()));
+			return new X509OCSPResponse(ocsp.Sign(ca));
 		}
 	}
 }

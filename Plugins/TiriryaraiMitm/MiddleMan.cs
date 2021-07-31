@@ -46,8 +46,11 @@ namespace TiriryaraiMitm
 
 		public bool Block(string hostname)
 		{
-			// Block all hostnames containing "hacker"
-			return new Regex("^.*hacker.*$").IsMatch(hostname);
+			// Block all private IP addresses to prevent bypassing
+			// a firewall
+			return new Regex(
+			    "(^127\\.)|(^10\\.)|(^172\\.1[6-9]\\.)|(^172\\.2[0-9]\\.)|(^172\\.3[0-1]\\.)|(^192\\.168\\.)"
+			).IsMatch(hostname);
 		}
 
 		public HttpMessage HandleRequest(HttpRequest req)
@@ -89,12 +92,12 @@ namespace TiriryaraiMitm
 			// and set a boolean to intercept requests
 			string msg = "";
 			string path = req.Path;
-			string[] contentType = req.GetHeader("Content-Type");
+			string contentType = req.ContentTypeWithoutCharset;
 			HttpResponse resp = new HttpResponse(200);
 			resp.SetHeader("Content-Type", "text/html");
 
 			if ("/save".Equals(path) && req.Method == Method.POST &&
-				contentType.Length > 0 && "application/x-www-form-urlencoded".Equals(contentType[0]))
+				"application/x-www-form-urlencoded".Equals(contentType))
 			{
 				intercept = "on".Equals(req.GetBodyParam("intercept"));
 				msg = "<p style=\"color:#00FF00\";>Saved!</p>";

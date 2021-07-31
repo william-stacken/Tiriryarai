@@ -19,6 +19,7 @@
 
 using System;
 using System.Text;
+using System.Web;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.Security;
@@ -34,6 +35,9 @@ using Tiriryarai.Http;
 using Tiriryarai.Util;
 
 using Mono.Security.X509;
+
+using HttpRequest = Tiriryarai.Http.HttpRequest;
+using HttpResponse = Tiriryarai.Http.HttpResponse;
 
 namespace Tiriryarai.Server
 {
@@ -60,6 +64,9 @@ namespace Tiriryarai.Server
 		/// <param name="prms">Various parameters and configuration used by the proxy.</param>
 		public HttpsMitmProxy(HttpsMitmProxyParams prms)
 		{
+			if (prms.Hostname.Split(':')[0].Equals(Resources.HOSTNAME))
+				throw new ArgumentException("The hostname may not be \"" + Resources.HOSTNAME + "\".");
+
 			string host = prms.Hostname;
 			Directory.CreateDirectory(prms.ConfigDirectory);
 			logger = Logger.GetSingleton();
@@ -76,19 +83,31 @@ namespace Tiriryarai.Server
 						resp.Status = 304;
 						return;
 					}
-					string httpsUrl = prms.HttpsUrl;
-					StringBuilder optBuilder = new StringBuilder();
-					if (prms.LogManagement)
-						optBuilder.Append("<li><a href=\"https://" + Resources.HOSTNAME + "/logs\">Log Management</a></li>");
+					switch (req.Method)
+					{
+						case Method.HEAD:
+						case Method.GET:
+							string httpsUrl = prms.HttpsUrl;
+							StringBuilder optBuilder = new StringBuilder();
+							if (prms.LogManagement)
+								optBuilder.Append("<li><a href=\"https://" + Resources.HOSTNAME + "/logs\">Log Management</a></li>");
 
-					resp.SetHeader("Content-Type", "text/html");
-					resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(
-						string.Format(
-							Resources.WELCOME_PAGE,
-							httpsUrl,
-							optBuilder.ToString()
-						)
-					));
+							DefaultHttpBody(resp, "text/html",
+								Encoding.Default.GetBytes(
+									string.Format(
+										Resources.WELCOME_PAGE,
+										httpsUrl,
+										optBuilder.ToString()
+									)
+								), false, req);
+							break;
+						case Method.OPTIONS:
+							resp.Allow = DefaultMethods();
+							break;
+						default:
+							DefaultUnsupported(resp, req);
+							break;
+					}
 				}},
 				{"favicon.ico", (req, resp) => {
 					if (req.GetDateHeader("If-Modified-Since") != null)
@@ -96,9 +115,20 @@ namespace Tiriryarai.Server
 						resp.Status = 304;
 						return;
 					}
-					resp.SetHeader("Cache-Control", "public");
-					resp.SetHeader("Content-Type", "image/x-icon");
-					resp.SetDecodedBodyAndLength(Resources.Get("favicon.ico"));
+					switch (req.Method)
+					{
+						case Method.HEAD:
+						case Method.GET:
+							resp.SetHeader("Cache-Control", "public");
+							DefaultHttpBody(resp, "image/x-icon", Resources.Get("favicon.ico"), false, req);
+							break;
+						case Method.OPTIONS:
+							resp.Allow = DefaultMethods();
+							break;
+						default:
+							DefaultUnsupported(resp, req);
+							break;
+					}
 					logger.Log(15, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 				}},
 				{"cert", (req, resp) => {
@@ -107,10 +137,21 @@ namespace Tiriryarai.Server
 						resp.Status = 304;
 						return;
 					}
-					resp.SetHeader("Cache-Control", "public");
-					resp.SetHeader("Content-Type", "application/octet-stream");
-					resp.SetHeader("Content-Disposition", "attachment; filename=Tiriryarai.der");
-					resp.SetDecodedBodyAndLength(cache.GetRootCA().GetRawCertData());
+					switch (req.Method)
+					{
+						case Method.HEAD:
+						case Method.GET:
+							resp.SetHeader("Cache-Control", "public");
+							resp.SetHeader("Content-Disposition", "attachment; filename=Tiriryarai.der");
+							DefaultHttpBody(resp, "application/octet-stream", cache.GetRootCA().GetRawCertData(), false, req);
+							break;
+						case Method.OPTIONS:
+							resp.Allow = DefaultMethods();
+							break;
+						default:
+							DefaultUnsupported(resp, req);
+							break;
+					}
 					logger.Log(15, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 				}},
 				{Resources.CA_ISSUER_PATH, (req, resp) =>
@@ -121,36 +162,87 @@ namespace Tiriryarai.Server
 						resp.Status = 304;
 						return;
 					}
-					resp.SetHeader("Content-Type", "application/pkix-cert");
-					resp.SetDecodedBodyAndLength(cache.GetRootCA().GetRawCertData());
+					switch (req.Method)
+					{
+						case Method.HEAD:
+						case Method.GET:
+							DefaultHttpBody(resp, "application/pkix-cert", cache.GetRootCA().GetRawCertData(), false, req);
+							break;
+						case Method.OPTIONS:
+							resp.Allow = DefaultMethods();
+							break;
+						default:
+							DefaultUnsupported(resp, req);
+							break;
+					}
 					logger.Log(15, req.Host, "OUTGOING ISSUER RESPONSE", resp);
 				}},
 				{Resources.OCSP_PATH, (req, resp) =>
 				{
 					logger.Log(8, req.Host, "INCOMMING OCSP REQUEST", req);
-					X509OCSPResponse ocspResp = cache.GetOCSPResponse(req);
-					if (req.GetDateHeader("If-Modified-Since")?.CompareTo(ocspResp.ExpiryDate) < 0)
+					switch (req.Method)
 					{
-						resp.Status = 304;
-						return;
+						case Method.HEAD:
+						case Method.GET:
+						case Method.POST:
+							X509OCSPRequest ocspReq = null;
+							try
+							{
+								// Fetch the OCSP request from the URI as base64 if the content type isn't an
+								// OCSP request.
+								byte[] rawOcspReq = "application/ocsp-request".Equals(req.GetHeader("Content-Type")?[0]) ?
+									req.Body : Convert.FromBase64String(HttpUtility.UrlDecode(req.SubPath(1)));
+								ocspReq = new X509OCSPRequest(rawOcspReq);
+							}
+							catch (Exception e)
+							{
+								logger.LogException(e, req);
+							}
+							X509OCSPResponse ocspResp = ocspReq != null ?
+							    cache.GetOCSPResponse(ocspReq) :
+							    new X509OCSPResponse(
+								    new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest).Sign(cache.GetOCSPCA())
+							    );
+							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(ocspResp.ExpiryDate) < 0)
+							{
+								resp.Status = 304;
+								return;
+							}
+							DefaultHttpBody(resp, "application/ocsp-response", ocspResp.RawData, false, req);
+							break;
+						case Method.OPTIONS:
+							resp.Allow = DefaultMethods(new Method[]{ Method.POST });
+							break;
+						default:
+							DefaultUnsupported(resp, req);
+							break;
 					}
-					resp.SetHeader("Content-Type", "application/ocsp-response");
-					resp.SetDecodedBodyAndLength(ocspResp.RawData);
 					logger.Log(15, req.Host, "OUTGOING OCSP RESPONSE", resp);
 				}},
 				{Resources.CRL_PATH, (req, resp) =>
 				{
 					logger.Log(8, req.Host, "INCOMMING CRL REQUEST", req);
-					X509Crl crl = cache.GetCrl();
-					if (req.GetDateHeader("If-Modified-Since")?.CompareTo(crl.NextUpdate) < 0)
+					switch (req.Method)
 					{
-						resp.Status = 304;
-						return;
+						case Method.HEAD:
+						case Method.GET:
+							X509Crl crl = cache.GetCrl();
+							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(crl.NextUpdate) < 0)
+							{
+								resp.Status = 304;
+								return;
+							}
+							resp.SetHeader("Expires", crl.ThisUpdate.ToString("r"));
+							resp.SetHeader("Last-Modified", crl.NextUpdate.ToString("r"));
+							DefaultHttpBody(resp, "application/pkix-crl", crl.RawData, false, req);
+							break;
+						case Method.OPTIONS:
+							resp.Allow = DefaultMethods();
+							break;
+						default:
+							DefaultUnsupported(resp, req);
+							break;
 					}
-					resp.SetHeader("Content-Type", "application/pkix-crl");
-					resp.SetHeader("Expires", crl.ThisUpdate.ToString("r"));
-					resp.SetHeader("Last-Modified", crl.NextUpdate.ToString("r"));
-					resp.SetDecodedBodyAndLength(crl.RawData);
 					logger.Log(15, req.Host, "OUTGOING CRL RESPONSE", resp);
 				}}
 			};
@@ -165,54 +257,76 @@ namespace Tiriryarai.Server
 
 						if ("".Equals(logFile))
 						{
-							logFile = req.GetQueryParam("delete");
-							if (logFile != null)
+							// Request to log directory
+							switch (req.Method)
 							{
-								logger.DeleteLog(logFile);
+								case Method.HEAD:
+								case Method.GET:
+									if (ifModified?.CompareTo(logger.LastWriteTimeDirectory) < 0)
+									{
+										resp.Status = 304;
+										return;
+									}
+									StringBuilder entryBuilder = new StringBuilder();
+									foreach (string log in logger.LogNames)
+									{
+										entryBuilder.Append(string.Format(
+											Resources.LOG_ENTRY,
+											log,
+											string.Format("{0:0.00}", (double)logger.LogSize(log) / 1024) + " kiB",
+											logger.LastWriteTime(log).ToString("r")
+										));
+									}
+									DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(
+										string.Format(Resources.LOG_PAGE, entryBuilder)
+									), false, req);
+									return;
+								case Method.OPTIONS:
+									resp.Allow = DefaultMethods();
+									return;
+								default:
+									DefaultUnsupported(resp, req);
+									return;
 							}
-							// Get log directory
-							string[] logs;
-							StringBuilder entryBuilder = new StringBuilder();
-							if (ifModified?.CompareTo(logger.LastWriteTimeDirectory) < 0)
-							{
-								resp.Status = 304;
-								return;
-							}
-							resp.SetHeader("Content-Type", "text/html");
-							logs = logger.LogNames;
-							foreach (string log in logs)
-							{
-								entryBuilder.Append(string.Format(
-								    Resources.LOG_ENTRY,
-									log,
-									string.Format("{0:0.00}", (double)logger.LogSize(log) / 1024) + " kiB",
-									logger.LastWriteTime(log).ToString("r")
-								));
-							}
-							resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(
-							    string.Format(Resources.LOG_PAGE, entryBuilder)
-							));
-							return;
 						}
-						else
+						else if (logger.Exists(logFile) && "".Equals(req.SubPath(2))) // Only one path level allowed
 						{
-							bool exists = logger.Exists(logFile);
-							if (ifModified?.CompareTo(logger.LastWriteTime(logFile)) < 0)
+							switch (req.Method)
 							{
-								resp.Status = 304;
-								return;
+								case Method.HEAD:
+								case Method.GET:
+									if (ifModified?.CompareTo(logger.LastWriteTime(logFile)) < 0)
+									{
+										resp.Status = 304;
+										return;
+									}
+									DefaultHttpBody(resp, "text/html", logger.ReadLog(logFile), true, req);
+									return;
+								case Method.POST:
+									if ("application/x-www-form-urlencoded".Equals(req.ContentTypeWithoutCharset) &&
+										"Delete".Equals(req.GetBodyParam("submit")))
+									{
+										logger.DeleteLog(logFile);
+									}
+									break;
+								case Method.DELETE:
+									logger.DeleteLog(logFile);
+									break;
+								case Method.OPTIONS:
+									resp.Allow = DefaultMethods(new Method[] { Method.POST, Method.DELETE });
+									return;
+								default:
+									DefaultUnsupported(resp, req);
+									return;
 							}
-							resp.SetHeader("Content-Type", "text/html");
-							if (exists && "".Equals(req.SubPath(2))) // Only one path level allowed
-							{
-								resp.SetDecodedBodyAndLength(logger.ReadLog(logFile));
-								return;
-							}
+							resp.Status = 302;
+							resp.SetHeader("Location", "https://" + Resources.HOSTNAME + "/logs");
+							resp.ContentLength = 0;
+							return;
 						}
 					}
 					resp.Status = 404;
-					resp.SetHeader("Content-Type", "text/html");
-					resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(Resources.NON_PAGE));
+					DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(Resources.NON_PAGE), false, req);
 				}}
 			};
 			X509CertificateUrls urls = new X509CertificateUrls(
@@ -277,6 +391,12 @@ namespace Tiriryarai.Server
 				{
 					req = HttpRequest.FromStream(stream);
 				}
+				catch (IOException e)
+				{
+					resp = DefaultHttpResponse(408);
+					resp.ToStream(stream);
+					throw e;
+				}
 				catch (Exception e)
 				{
 					resp = DefaultHttpResponse(400);
@@ -317,6 +437,12 @@ namespace Tiriryarai.Server
 						{
 							req = HttpRequest.FromStream(sslStream);
 							resp = HandleRequest(req, host, clientIp, tls: true);
+						}
+						catch (IOException e)
+						{
+							resp = DefaultHttpResponse(408);
+							resp.ToStream(stream);
+							throw e;
 						}
 						catch (Exception e)
 						{
@@ -445,8 +571,9 @@ namespace Tiriryarai.Server
 				if (!tls)
 				{
 					// If the client is attempting to access insecurely, redirect to
-					// tiriryarai welcome page with info.
+					// HTTPS page.
 					resp = DefaultHttpResponse(301, req);
+					resp.SetHeader("Location", prms.HttpsUrl + req.Path);
 				}
 				else if (prms.Authenticate && !req.BasicAuthenticated("Authorization", prms.Username, prms.Password))
 				{
@@ -462,7 +589,19 @@ namespace Tiriryarai.Server
 			else // Let Tiriryarai handle request
 			{
 				string rootPath = req.SubPath(0);
-				if (httpHandlers.TryGetValue(rootPath, out Action<HttpRequest, HttpResponse> handler))
+				if (req.Method == Method.TRACE)
+				{
+					resp = DefaultHttpResponse(200, req);
+					DefaultHttpBody(resp, "message/http", Encoding.Default.GetBytes(
+						req.RequestLine + req.RawHeaders
+					), false, req);
+				}
+				else if (req.Method == Method.OPTIONS && "*".Equals(rootPath))
+				{
+					resp = DefaultHttpResponse(200, req);
+					resp.Allow = DefaultMethods(new Method[] { Method.POST, Method.DELETE, Method.CONNECT });
+				}
+				else if (httpHandlers.TryGetValue(rootPath, out Action<HttpRequest, HttpResponse> handler))
 				{
 					resp = DefaultHttpResponse(200, req);
 					handler(req, resp);
@@ -470,9 +609,10 @@ namespace Tiriryarai.Server
 				else if (!tls)
 				{
 					// If the client is attempting to access insecurely, redirect to
-					// default welcome page with info.
+					// HTTPS version of page.
 					resp = DefaultHttpResponse(301, req);
 				}
+				// From here on, only HTTPS is allowed
 				else if (prms.Authenticate && !req.BasicAuthenticated("Authorization", prms.Username, prms.Password))
 				{
 					cache.GetIPStatistics(client).LoginAttempt();
@@ -508,7 +648,7 @@ namespace Tiriryarai.Server
 			switch (status)
 			{
 				case 301:
-					resp.SetHeader("Location", "http://" + Resources.HOSTNAME + "/");
+					resp.SetHeader("Location", "https://" + Resources.HOSTNAME + req.Path);
 					body = "";
 					break;
 				case 400:
@@ -530,28 +670,69 @@ namespace Tiriryarai.Server
 					    "Basic realm=\"Use of the proxy server. This is sent insecurely over HTTP.\"");
 					body = Resources.PROXY_PAGE;
 					break;
+				case 408:
+					body = Resources.TIMEOUT_PAGE;
+					break;
 				case 500:
 					body = Resources.ERR_PAGE;
 					break;
 				case 502:
 					body = Resources.GATE_PAGE;
 					break;
+				case 504:
+					body = Resources.GATE_PAGE; // TODO Send page for gateway timeout
+					break;
 				default:
 					// Non standardized HTTP body
-					if (req != null)
-					{
-						resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
-							{ContentEncoding.Br, 3},
-							{ContentEncoding.GZip, 2},
-							{ContentEncoding.Deflate, 1}
-						});
-						resp.SetHeader("Vary", "Accept-Encoding");
-					}
 					return resp;
 			}
-			resp.SetHeader("Content-Type", "text/html");
-			resp.SetDecodedBodyAndLength(Encoding.Default.GetBytes(body));
+			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(body), false, req);
 			return resp;
+		}
+
+		private void DefaultHttpBody(HttpResponse resp, string contentType, byte[] body, bool chunked, HttpRequest req)
+		{
+			resp.SetHeader("Content-Type", contentType);
+			if (req != null)
+			{
+				resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
+					{ContentEncoding.Br, 3},
+					{ContentEncoding.GZip, 2},
+					{ContentEncoding.Deflate, 1}
+				});
+				resp.SetHeader("Vary", "Accept-Encoding");
+			}
+			if (!chunked)
+				resp.ContentLength = (uint)body.Length;
+			else
+				resp.Chunked = true;
+			if (req == null || req.Method != Method.HEAD)
+			{
+				resp.DecodedBody = body;
+			}
+		}
+
+		private Method[] DefaultMethods()
+		{
+			return DefaultMethods(new Method[0]);
+		}
+
+		private Method[] DefaultMethods(Method[] extras)
+		{
+			List<Method> list = new List<Method> {
+				Method.GET,
+				Method.HEAD,
+				Method.OPTIONS,
+				Method.TRACE
+			};
+			list.AddRange(extras);
+			return list.ToArray();
+		}
+
+		private void DefaultUnsupported(HttpResponse resp, HttpRequest req)
+		{
+			resp.Status = 405;
+			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(Resources.METHOD_PAGE), false, req);
 		}
 
 		private void PrintStartup()
