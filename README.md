@@ -1,5 +1,6 @@
 # Tiriryarai
-An HTTPS man-in-the-middle proxy framework written in C#.
+An HTTPS man-in-the-middle proxy framework written in C#, allowing for custom plugins
+that can freely modify incomming HTTP requests and responses automatically.
 
 ![logo](Tiriryarai/favicon.ico)
 
@@ -14,8 +15,8 @@ An HTTPS man-in-the-middle proxy framework written in C#.
  - [7. License](#7-license)
 
 ## 1. Features
-- Automated certificate creation for each host.
 - Customized plugins for automated HTTP request and response modification and interception.
+- Automated certificate creation for each host.
 - OCSP query support (No OCSP stapling).
 - Certificate Revocation List (CRL) support.
 - Logging of incoming HTTP requests and responses using different verbosity levels.

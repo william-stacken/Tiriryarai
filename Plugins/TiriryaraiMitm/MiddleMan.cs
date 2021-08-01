@@ -66,6 +66,19 @@ namespace TiriryaraiMitm
 				return resp;
 			}
 
+			// Replace the connection header and remove all headers in its header
+			// fields in accordance to rfc7230 section 6.1
+			string[] connection = req.GetHeader("Connection");
+			if (connection != null)
+			{
+				foreach (string field in connection)
+				{
+					req.RemoveHeader(field);
+				}
+				req.SetHeader("Connection", "keep-alive");
+				logger.Log(3, req.Host, "REPLACED CONNECTION HEADER", req);
+			}
+
 			// Add header if the request was destined to example.org
 			if ("example.org".Equals(req.Host))
 			{

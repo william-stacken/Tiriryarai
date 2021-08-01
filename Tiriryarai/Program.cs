@@ -26,7 +26,6 @@ using Mono.Options;
 using Tiriryarai.Server;
 using Tiriryarai.Util;
 
-
 namespace TiriryaraiMitm
 {
 	/// <summary>

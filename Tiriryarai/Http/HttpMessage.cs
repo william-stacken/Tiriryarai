@@ -437,6 +437,25 @@ namespace Tiriryarai.Http
 		}
 
 		/// <summary>
+		/// returns a boolean indicating whether the given token is present
+		/// in the header value
+		/// </summary>
+		/// <returns><c>true</c> if the token is present; otherwise, <c>false</c>.</returns>
+		/// <param name="key">The header whose token values to check.</param>
+		/// <param name="token">The token to check for.</param>
+		public bool HeaderContains(string key, string token)
+		{
+			token = token.Trim().ToLower();
+			string[] val = GetHeader(key);
+			for (int i = 0; i < val?.Length; i++)
+			{
+				if (val[i].Trim().ToLower().Equals(token))
+					return true;
+			}
+			return false;
+		}
+
+		/// <summary>
 		/// Sets the decoded entity body, encodes it according to the headers, and automatically updates or adds
 		/// the <code>Content-Length</code> header to the encoded length, but only if the body does not have a
 		/// chunked transfer encoding.

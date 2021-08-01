@@ -142,6 +142,12 @@ namespace Tiriryarai.Util
 		public static string GATE_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>502 Bad Gateway</h1>" +
 			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<p>The requested host sent an illegitimate response.</p>"
+		);
+
+		public static string GATE_TIMEOUT_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>504 Gateway Timeout</h1>" +
+			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
 			"<p>Failed to obtain a reply from the requested host.</p>"
 		);
 

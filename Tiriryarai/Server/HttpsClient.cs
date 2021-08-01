@@ -18,6 +18,7 @@
 //
 
 using System;
+using System.IO;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
@@ -31,17 +32,29 @@ namespace Tiriryarai.Server
 	/// </summary>
 	class HttpsClient
 	{
-		private readonly string hostname;
+		public string Hostname { get; }
+		public string HostnameWithPort { get; }
+
 		private readonly ushort port;
+		private readonly int timeout;
+		private readonly bool tls;
+		private readonly bool ignoreCerts;
+		private TcpClient openConnection;
+		private Stream server;
+
 		private static bool ValidateServerCertificate(
 			object sender,
 			X509Certificate certificate,
 			X509Chain chain,
 			SslPolicyErrors sslPolicyErrors)
 		{
-			// WARNING: Ignore invalid certificates
+			// WARNING: Ignores invalid certificates
 			return true;
 		}
+
+		public HttpsClient(string hostname) : this(hostname, 0) { }
+		public HttpsClient(string hostname, int timeout) : this(hostname, timeout, true) { }
+		public HttpsClient(string hostname, int timeout, bool tls) : this(hostname, timeout, tls, false) { }
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Server.HttpsClient"/> class
@@ -51,10 +64,13 @@ namespace Tiriryarai.Server
 		/// <example><c>example.org:1234</c> means connect to example.org at port 1234</example>
 		/// <example><c>example.org</c> means connect to example.org at port 443 (default)</example>
 		/// </param>
-		public HttpsClient(string hostname)
+		/// <param name="timeout">The amount of time to wait for responses in milliseconds.</param>
+		/// <param name="tls">if <c>true</c>, send requests over TLS</param>
+		/// <param name="ignoreCerts">if <c>true</c>, ignore invalid certificates.</param>
+		public HttpsClient(string hostname, int timeout, bool tls, bool ignoreCerts)
 		{
 			string[] nameSplit = hostname.Split(':');
-			ushort p = 443;
+			ushort p = (ushort)(tls ? 443 : 80);
 			if (nameSplit.Length > 1)
 			{
 				ushort.TryParse(nameSplit[1], out p);
@@ -63,47 +79,81 @@ namespace Tiriryarai.Server
 			{
 				throw new ArgumentException(hostname[0] + " is not a valid hostname!");
 			}
-			this.hostname = nameSplit[0];
+			this.Hostname = nameSplit[0];
+			this.HostnameWithPort = hostname;
 			this.port = p;
+			this.tls = tls;
+			this.timeout = timeout;
+			this.ignoreCerts = ignoreCerts;
 		}
 
 		/// <summary>
 		/// Opens an HTTPS session to the host, sends the given HTTP request
-		/// and retreives an HTTP response.
+		/// and retreives an HTTP response. Examines the <c>Connection</c>
+		/// headers of the HTTP messages to determine whether to keep the
+		/// connection alive or close it.
 		/// </summary>
 		/// <returns>The retreived HTTP response.</returns>
 		/// <param name="req">The HTTP request to send.</param>
 		public HttpResponse Send(HttpRequest req)
 		{
-			return Send(req, false);
+			if (isClosed)
+			{
+				openConnection = new TcpClient(Hostname, port);
+				server = openConnection.GetStream();
+				if (timeout > 0)
+					server.ReadTimeout = timeout;
+			}
+			if (tls && !(server is SslStream))
+			{
+				SslStream sslStream = ignoreCerts ? new SslStream(
+					openConnection.GetStream(),
+					false,
+					new RemoteCertificateValidationCallback(ValidateServerCertificate),
+					null
+				) : new SslStream(openConnection.GetStream());
+				sslStream.AuthenticateAsClient(Hostname, null,
+					SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12 | SslProtocols.Tls13, false);
+
+				server = sslStream;
+			}
+			req.ToStream(server);
+			server.Flush();
+
+			return HttpResponse.FromStream(server);
 		}
 
-		/// <summary>
-		/// Opens an HTTPS session to the host, sends the given HTTP request
-		/// and retreives an HTTP response.
-		/// </summary>
-		/// <returns>The retreived HTTP response.</returns>
-		/// <param name="req">The HTTP request to send.</param>
-		/// <param name="ignoreCerts">if <c>true</c>, ignore invalid certificates.</param>
-		public HttpResponse Send(HttpRequest req, bool ignoreCerts)
+		// TODO is it better to implement IDisposable? The object should be closable
+		// but shouldn't necessarily be disposed when it is closed since we may want
+		// to open another connection to the same server
+
+		public bool isClosed
 		{
-			HttpResponse resp = null;
-			TcpClient client = new TcpClient(hostname, port);
-			SslStream sslStream = ignoreCerts ? new SslStream(
-				client.GetStream(),
-				false,
-				new RemoteCertificateValidationCallback(ValidateServerCertificate),
-				null
-			) : new SslStream(client.GetStream());
-			sslStream.AuthenticateAsClient(hostname, null, 
-				SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12 | SslProtocols.Tls13, false);
-			req.ToStream(sslStream);
-			sslStream.Flush();
+			get
+			{
+				bool isClosed = openConnection == null ||
+							!openConnection.Connected ||
+							server == null ||
+							!server.CanWrite;
+				// Close just in case there is some half open connections
+				if (isClosed)
+					Close();
+				return isClosed;
+			}
+		}
 
-			resp = HttpResponse.FromStream(sslStream);
-
-			client.Close();
-			return resp;
+		public void Close()
+		{
+			if (server != null)
+			{
+				server.Close();
+				server = null;
+			}
+			if (openConnection != null)
+			{
+				openConnection.Close();
+				openConnection = null;
+			}
 		}
 	}
 }
