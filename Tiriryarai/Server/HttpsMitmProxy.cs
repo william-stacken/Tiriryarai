@@ -81,10 +81,8 @@ namespace Tiriryarai.Server
 			{
 				{"", (req, resp) => {
 					if (req.GetDateHeader("If-Modified-Since") != null)
-					{
 						resp.Status = 304;
-						return;
-					}
+
 					switch (req.Method)
 					{
 						case Method.HEAD:
@@ -112,16 +110,16 @@ namespace Tiriryarai.Server
 					}
 				}},
 				{"favicon.ico", (req, resp) => {
-					if (req.GetDateHeader("If-Modified-Since") != null)
-					{
-						resp.Status = 304;
-						return;
-					}
 					switch (req.Method)
 					{
 						case Method.HEAD:
 						case Method.GET:
+							resp.SetHeader("Last-Modified", DateTime.Now.AddYears(-1).ToString("r"));
+							resp.SetHeader("Expires", DateTime.Now.AddMonths(1).ToString("r"));
 							resp.SetHeader("Cache-Control", "public");
+							if (req.GetDateHeader("If-Modified-Since") != null)
+								resp.Status = 304;
+
 							DefaultHttpBody(resp, "image/x-icon", Resources.Get("favicon.ico"), false, req);
 							break;
 						case Method.OPTIONS:
@@ -134,18 +132,19 @@ namespace Tiriryarai.Server
 					logger.Log(15, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 				}},
 				{"cert", (req, resp) => {
-					if (req.GetDateHeader("If-Modified-Since") != null)
-					{
-						resp.Status = 304;
-						return;
-					}
 					switch (req.Method)
 					{
 						case Method.HEAD:
 						case Method.GET:
+							X509Certificate2 root = cache.GetRootCA();
+							resp.SetHeader("Last-Modified", root.NotBefore.ToString("r"));
+							resp.SetHeader("Expires", root.NotAfter.ToString("r"));
 							resp.SetHeader("Cache-Control", "public");
 							resp.SetHeader("Content-Disposition", "attachment; filename=Tiriryarai.der");
-							DefaultHttpBody(resp, "application/octet-stream", cache.GetRootCA().GetRawCertData(), false, req);
+							if (req.GetDateHeader("If-Modified-Since") != null)
+								resp.Status = 304;
+
+							DefaultHttpBody(resp, "application/octet-stream", root.GetRawCertData(), false, req);
 							break;
 						case Method.OPTIONS:
 							DefaultOptions(resp, req);
@@ -159,16 +158,18 @@ namespace Tiriryarai.Server
 				{Resources.CA_ISSUER_PATH, (req, resp) =>
 				{
 					logger.Log(8, req.Host, "INCOMMING ISSUER REQUEST", req);
-					if (req.GetDateHeader("If-Modified-Since") != null)
-					{
-						resp.Status = 304;
-						return;
-					}
 					switch (req.Method)
 					{
 						case Method.HEAD:
 						case Method.GET:
-							DefaultHttpBody(resp, "application/pkix-cert", cache.GetRootCA().GetRawCertData(), false, req);
+							X509Certificate2 root = cache.GetRootCA();
+							resp.SetHeader("Last-Modified", root.NotBefore.ToString("r"));
+							resp.SetHeader("Expires", root.NotAfter.ToString("r"));
+							resp.SetHeader("Cache-Control", "public");
+							if (req.GetDateHeader("If-Modified-Since") != null)
+								resp.Status = 304;
+
+							DefaultHttpBody(resp, "application/pkix-cert", root.GetRawCertData(), false, req);
 							break;
 						case Method.OPTIONS:
 							DefaultOptions(resp, req);
@@ -205,11 +206,11 @@ namespace Tiriryarai.Server
 							    new X509OCSPResponse(
 								    new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest).Sign(cache.GetOCSPCA())
 							    );
-							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(ocspResp.ExpiryDate) < 0)
-							{
+							DateTime expiry = ocspResp.ExpiryDate;
+							resp.SetHeader("Expires", expiry.ToString("r"));
+							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(expiry) < 0)
 								resp.Status = 304;
-								return;
-							}
+
 							DefaultHttpBody(resp, "application/ocsp-response", ocspResp.RawData, false, req);
 							break;
 						case Method.OPTIONS:
@@ -229,13 +230,11 @@ namespace Tiriryarai.Server
 						case Method.HEAD:
 						case Method.GET:
 							X509Crl crl = cache.GetCrl();
+							resp.SetHeader("Expires", crl.NextUpdate.ToString("r"));
+							resp.SetHeader("Last-Modified", crl.ThisUpdate.ToString("r"));
 							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(crl.NextUpdate) < 0)
-							{
 								resp.Status = 304;
-								return;
-							}
-							resp.SetHeader("Expires", crl.ThisUpdate.ToString("r"));
-							resp.SetHeader("Last-Modified", crl.NextUpdate.ToString("r"));
+
 							DefaultHttpBody(resp, "application/pkix-crl", crl.RawData, false, req);
 							break;
 						case Method.OPTIONS:
@@ -264,11 +263,11 @@ namespace Tiriryarai.Server
 							{
 								case Method.HEAD:
 								case Method.GET:
-									if (ifModified?.CompareTo(logger.LastWriteTimeDirectory) < 0)
-									{
+									DateTime lastWrite = logger.LastWriteTimeDirectory;
+									resp.SetHeader("Last-Modified", lastWrite.ToString("r"));
+									if (ifModified?.CompareTo(lastWrite) < 0)
 										resp.Status = 304;
-										return;
-									}
+
 									StringBuilder entryBuilder = new StringBuilder();
 									foreach (string log in logger.LogNames)
 									{
@@ -297,11 +296,11 @@ namespace Tiriryarai.Server
 							{
 								case Method.HEAD:
 								case Method.GET:
-									if (ifModified?.CompareTo(logger.LastWriteTime(logFile)) < 0)
-									{
+									DateTime lastWrite = logger.LastWriteTime(logFile);
+									resp.SetHeader("Last-Modified", lastWrite.ToString("r"));
+									if (ifModified?.CompareTo(lastWrite) < 0)
 										resp.Status = 304;
-										return;
-									}
+
 									try
 									{
 										DefaultHttpBody(resp, "text/html", logger.ReadLog(logFile), true, req);
@@ -772,7 +771,7 @@ namespace Tiriryarai.Server
 			}
 			resp.Chunked = chunked;
 			resp.SetDecodedBodyAndLength(body);
-			if (req != null && req.Method == Method.HEAD)
+			if ((req != null && req.Method == Method.HEAD) || resp.Status == 204 || resp.Status == 304)
 			{
 				resp.Body = new byte[0];
 			}

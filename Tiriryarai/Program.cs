@@ -35,13 +35,13 @@ namespace TiriryaraiMitm
 	{
 		private static string Hostname = null;
 		private static ushort Port = 8081;
-		private static uint? Verbosity = null;
+		private static uint? Verbosity = 4;
 		private static uint? MaxLogSize = null;
 		private static string Username = null;
 		private static string Password = null;
 		private static string ProxyPass = null;
 		private static string ConfigDir = null;
-		private static bool Logs = false;
+		private static bool Logs = true;
 		private static bool IgnoreCerts = false;
 		private static int ReadTimeout = -1;
 		private static bool Help = false;

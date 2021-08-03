@@ -12,7 +12,6 @@
     <Compile Include="$(MSBuildThisFileDirectory)Http\HttpMessage.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Http\HttpRequest.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Http\HttpResponse.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\Aes256Cbc.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Security\AuthorityInfoAccessExtension.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Security\CRLDistributionPointsExtension.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Security\CRLNumberExtension.cs" />

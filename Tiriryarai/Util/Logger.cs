@@ -154,7 +154,7 @@ namespace Tiriryarai.Util
 				this.mode = mode;
 				this.leaveOpen = leaveOpen;
 
-				ivBuf = new byte[this.key.Length >> 1];
+				ivBuf = new byte[16];
 				lenBuf = new byte[sizeof(int)];
 				memBuf = new byte[8192];
 			}
