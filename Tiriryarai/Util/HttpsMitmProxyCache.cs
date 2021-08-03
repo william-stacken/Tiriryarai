@@ -200,7 +200,31 @@ namespace Tiriryarai.Util
 		/// <param name="hostname">The hostname whose certificate is requested.</param>
 		public X509Certificate2 GetCertificate(string hostname)
 		{
-			return AddOrGetExisting(hostname.Split(':')[0], CreateCertificate, val => (
+			int i;
+			string[] subdomains;
+			if (hostname == null)
+				throw new ArgumentNullException(nameof(hostname));
+
+			hostname = hostname.Split(':')[0];
+			UriHostNameType t = Uri.CheckHostName(hostname);
+			if (t == UriHostNameType.Unknown)
+				throw new ArgumentException("Invalid hostname: " + hostname);
+
+			if (t == UriHostNameType.Dns)
+			{
+				// Convert www.example.org to example.org such that *.example.org
+				// can be used as a subject alternative name, reducing the amount
+				// of certificates that must be generated
+				subdomains = hostname.Split('.');
+				if ((subdomains.Length & 1) != 0)
+				{
+					i = hostname.IndexOf('.');
+					if (i >= 0)
+						hostname = hostname.Substring(i + 1, hostname.Length - i - 1);
+				}
+			}
+
+			return AddOrGetExisting(hostname, CreateCertificate, val => (
 				val as X509Certificate2).NotAfter
 			) as X509Certificate2;
 		}
@@ -227,6 +251,8 @@ namespace Tiriryarai.Util
 		/// is to be checked for revocation.</param>
 		public X509OCSPResponse GetOCSPResponse(X509OCSPRequest ocspReq)
 		{
+			if (ocspReq == null)
+				throw new ArgumentNullException(nameof(ocspReq));
 			return AddOrGetExisting(ocspReq.CertificateID, CreateOCSPResponse, val => (
 			    val as X509OCSPResponse).ExpiryDate
 			) as X509OCSPResponse;
@@ -367,9 +393,21 @@ namespace Tiriryarai.Util
 
 			SubjectAltNameExtension sane;
 			if (IPAddress.TryParse(hostname, out _))
+			{
 				sane = new SubjectAltNameExtension(null, null, new string[] { hostname }, null);
+			}
 			else
-				sane = new SubjectAltNameExtension(null, new string[] { hostname }, null, null);
+			{
+				if (hostname.IndexOf('.') >= 0)
+				{
+					sane = new SubjectAltNameExtension(null, new string[] { hostname, "*." + hostname }, null, null);
+				}
+				else
+				{
+					sane = new SubjectAltNameExtension(null, new string[] { hostname }, null, null);
+				}
+			}
+
 
 			ExtendedKeyUsageExtension ekue = new ExtendedKeyUsageExtension();
 			ekue.KeyPurpose.Add("1.3.6.1.5.5.7.3.1"); // authenticate server
@@ -419,9 +457,7 @@ namespace Tiriryarai.Util
 			foreach (string mitmHost in mitmHosts)
 			{
 				if (hostname.Equals(mitmHost))
-				{
 					p12.SaveToFile(Path.Combine(storeDir, mitmHost + ".pfx"));
-				}
 			}
 
 			return new X509Certificate2(

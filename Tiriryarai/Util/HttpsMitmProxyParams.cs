@@ -22,45 +22,110 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+
 using Tiriryarai.Server;
 
 namespace Tiriryarai.Util
 {
 	class HttpsMitmProxyParams
 	{
+		private const int AES_BYTES = 32; // AES-256
+		private const int KEY_ITERATIONS = 500;
+		private static readonly byte[] SALT = {
+			45, 213, 63, 89, 4, 121, 77, 19, 30, 91, 73, 244, 55, 98, 2, 157
+		};
+
 		public IManInTheMiddle MitM { get; }
 		public ushort Port { get; }
 
+		private string user;
 		/// <summary>
 		/// Gets the username required for HTTP basic authentication.
 		/// </summary>
-		public string Username { get; private set; }
+		public string Username
+		{
+			get
+			{
+				return user != null ? (string) user.Clone(): null;
+			}
+			set
+			{
+				bool set = !string.IsNullOrWhiteSpace(value);
+				if ((PassKey != null || ProxyPassKey != null) && !set)
+					throw new ArgumentException("Cannot remove username, passkeys must be removed first.");
+				if (set && new Regex("[\x00-\x1f\x7f:]").IsMatch(value))
+					throw new ArgumentException("Invalid username: " + value);
+
+				user = set ? value : null;
+			}
+		}
+
+		private byte[] passkey = null;
 
 		/// <summary>
-		/// Gets the password required for HTTP basic authentication.
+		/// Gets the RFC2898 derived bytes of the password required for HTTP basic authentication.
 		/// This password is used to access the admin pages and is only sent
 		/// over HTTPS.
 		/// </summary>
-		public string Password { get; private set; }
+		public byte[] PassKey
+		{
+			get
+			{
+				return passkey != null ? (byte[]) passkey.Clone() : null;
+			}
+		}
 
-		private string proxypass;
 		/// <summary>
-		/// Gets or sets the password required for HTTP basic authentication.
+		/// Sets the password required for HTTP basic authentication.
+		/// This password is used to access the admin pages and is only sent
+		/// over HTTPS.
+		/// </summary>
+		public string Password
+		{
+			set
+			{
+				bool set = !string.IsNullOrWhiteSpace(value);
+				if (Username == null && set)
+					throw new ArgumentException("Cannot set password, username must be given.");
+				if (set && new Regex("[\x00-\x1f\x7f]").IsMatch(value))
+					throw new ArgumentException("Invalid password: " + value);
+
+				passkey = ToPassKey(value);
+			}
+		}
+
+		private byte[] proxypasskey = null;
+
+		/// <summary>
+		/// Gets the the RFC2898 derived bytes of the password required for HTTP basic authentication.
+		/// This password is for using the proxy server and is sent over
+		/// plain text HTTP.
+		/// </summary>
+		public byte[] ProxyPassKey
+		{
+			get
+			{
+				return proxypasskey != null ? (byte[]) proxypasskey.Clone() : null;
+			}
+		}
+
+		/// <summary>
+		/// Sets the password required for HTTP basic authentication.
 		/// This password is for using the proxy server and is sent over
 		/// plain text HTTP. DO NOT USE THE SAME PASSWORD TO ACCESS THE ADMIN PAGES!
 		/// </summary>
 		public string ProxyPassword
 		{
-			get
-			{
-				return proxypass;
-			}
 			set
 			{
-				if (Username == null && value != null)
+				bool set = !string.IsNullOrWhiteSpace(value);
+				if (Username == null && set)
 					throw new ArgumentException("Cannot set proxy password, username must be given.");
+				if (set && new Regex("[\x00-\x1f\x7f]").IsMatch(value))
+					throw new ArgumentException("Invalid proxy password: " + value);
 
-				proxypass = value;
+				proxypasskey = ToPassKey(value);
 			}
 		}
 
@@ -188,14 +253,14 @@ namespace Tiriryarai.Util
 		/// the custom MitM plugin page and other admin pages.
 		/// </summary>
 		/// <value><c>true</c> if authentication is required; otherwise, <c>false</c>.</value>
-		public bool Authenticate { get { return Username != null; } }
+		public bool Authenticate { get { return PassKey != null; } }
 
 		/// <summary>
 		/// Gets a value indicating whether HTTP basic authentication is required to use
 		/// the proxy.
 		/// </summary>
 		/// <value><c>true</c> if authentication is required; otherwise, <c>false</c>.</value>
-		public bool ProxyAuthenticate { get { return ProxyPassword != null; } }
+		public bool ProxyAuthenticate { get { return ProxyPassKey != null; } }
 
 		/// <summary>
 		/// Gets or sets a value indicating how many login attempts is allowed from a client
@@ -263,43 +328,55 @@ namespace Tiriryarai.Util
 		}
 
 		/// <summary>
-		/// Initializes a new instance of the <see cref="T:Tiriryarai.Util.HttpsMitmProxyParams"/> with
-		/// HTTP basic authentication when accessing the custom MitM page. class.
+		/// Checks if the given username and password is authenticated to access admin pages.
 		/// </summary>
-		/// <param name="mitm">The man-in-the-middle-handler that will receive incomming HTTP responses and requests</param>
-		/// <param name="port">The port the server will listen on.</param>
-		/// <param name="username">The username required for basic HTTP authentication.</param>
-		/// <param name="password">The password required for basic HTTP authentication.</param>
-		public HttpsMitmProxyParams(IManInTheMiddle mitm, ushort port, string username, string password) : this(mitm, port)
+		/// <returns><c>true</c>, if the username and password was authenticated, <c>false</c> otherwise.</returns>
+		/// <param name="username">The username to check.</param>
+		/// <param name="password">The password to check</param>
+		public bool IsAuthenticated(string username, string password)
 		{
-			SetCredentials(username, password);
+			byte[] key;
+			if (!Authenticate)
+				return true;
+			if (username == null || (key = ToPassKey(password)) == null)
+				return false;
+			return username.Equals(Username) && KeysEqual(PassKey, key);
 		}
 
 		/// <summary>
-		/// Removes the need for clients to authenicate using HTTP basic authentication when
-		/// accessing the custom MitM page.
+		/// Checks if the given username and password is authenticated to use the proxy.
 		/// </summary>
-		public void RemoveCredentials()
+		/// <returns><c>true</c>, if the username and password was authenticated, <c>false</c> otherwise.</returns>
+		/// <param name="username">The username to check.</param>
+		/// <param name="password">The password to check</param>
+		public bool IsProxyAuthenticated(string username, string password)
 		{
-			SetCredentials(null, null);
+			byte[] key;
+			if (!ProxyAuthenticate)
+				return true;
+			if (username == null || (key = ToPassKey(password)) == null)
+				return false;
+			return username.Equals(Username) && KeysEqual(ProxyPassKey, key);
 		}
 
-		/// <summary>
-		/// Updates the credentials required for basic HTTP authentication. when
-		/// accessing the custom MitM page.
-		/// </summary>
-		/// <param name="username">The new username required for basic HTTP authentication.</param>
-		/// <param name="password">The new password required for basic HTTP authentication.</param>
-		public void SetCredentials(string username, string password)
+		private byte[] ToPassKey(string pass)
 		{
-			if ((username != null || password != null) && (username == null || password == null))
-				throw new ArgumentException("Both username and password must be given");
+			return !string.IsNullOrWhiteSpace(pass) ?
+			       new Rfc2898DeriveBytes(pass, SALT, KEY_ITERATIONS).GetBytes(AES_BYTES) :
+			       null;
+		}
 
-			if (username != null && password != null &&
-			    (new Regex("[\x00-\x1f\x7f:]").IsMatch(username) || new Regex("[\x00-\x1f\x7f]").IsMatch(password)))
-				throw new ArgumentException("Username \"" + username + "\" or password \"" + password + "\" contains invalid characters");
-			Username = username;
-			Password = password;
+		private bool KeysEqual(byte[] k1, byte[] k2)
+		{
+			if (k1.Length != k2.Length)
+				return false;
+
+			for (int i = 0; i < k1.Length; i++)
+			{
+				if (k1[i] != k2[i])
+					return false;
+			}
+			return true;
 		}
 	}
 }

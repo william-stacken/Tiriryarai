@@ -48,6 +48,7 @@ namespace Tiriryarai.Server
 	/// </summary>
 	class HttpsMitmProxy
 	{
+		private TcpListener listener;
 		private HttpsMitmProxyParams prms;
 
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpHandlers;
@@ -73,7 +74,8 @@ namespace Tiriryarai.Server
 			logger.Initialize(
 			    Path.Combine(prms.ConfigDirectory, "logs"),
 				(uint) prms.LogVerbosity,
-				(uint) prms.MaxLogSize);
+				(uint) prms.MaxLogSize,
+				prms.PassKey);
 			prms.MitM.Initialize(prms.ConfigDirectory);
 			httpHandlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
 			{
@@ -300,7 +302,14 @@ namespace Tiriryarai.Server
 										resp.Status = 304;
 										return;
 									}
-									DefaultHttpBody(resp, "text/html", logger.ReadLog(logFile), true, req);
+									try
+									{
+										DefaultHttpBody(resp, "text/html", logger.ReadLog(logFile), true, req);
+									}
+									catch (IOException)
+									{
+										DefaultInternalError(resp, req, Resources.LOG_ERR_MSG);
+									}
 									return;
 								case Method.POST:
 									if ("application/x-www-form-urlencoded".Equals(req.ContentTypeWithoutCharset) &&
@@ -347,6 +356,9 @@ namespace Tiriryarai.Server
 			};
 
 			this.prms = prms;
+
+			listener = new TcpListener(IPAddress.Any, prms.Port);
+			listener.Start();
 		}
 
 		/// <summary>
@@ -354,9 +366,6 @@ namespace Tiriryarai.Server
 		/// </summary>
 		public void Start()
 		{
-			TcpListener listener = new TcpListener(IPAddress.Any, prms.Port);
-			listener.Start();
-			PrintStartup();
 			while (true)
 			{
 				TcpClient client = listener.AcceptTcpClient();
@@ -369,6 +378,8 @@ namespace Tiriryarai.Server
 			HttpRequest req;
 			HttpResponse resp;
 			string host, hostWithPort;
+			string user = null;
+			string pass = null;
 			HttpsClient destination = null;
 			bool toTiriryarai = false;
 			bool keepAlive = false;
@@ -425,7 +436,8 @@ namespace Tiriryarai.Server
 					{
 						if (prms.ProxyAuthenticate &&
 							!toTiriryarai &&
-							!req.BasicAuthenticated("Proxy-Authorization", prms.Username, prms.ProxyPassword))
+							(!req.TryGetBasicAuthentication("Proxy-Authorization", out user, out pass) ||
+							!prms.IsProxyAuthenticated(user, pass)))
 						{
 							// Don't count login attempts here as it would be really easy to get banned by mistake otherwise
 							resp = DefaultHttpResponse(407, req);
@@ -498,7 +510,8 @@ namespace Tiriryarai.Server
 						// If a non-CONNECT request is received, it will be proxied directly
 						if (prms.ProxyAuthenticate &&
 							!toTiriryarai &&
-							!req.BasicAuthenticated("Proxy-Authorization", prms.Username, prms.ProxyPassword))
+							(!req.TryGetBasicAuthentication("Proxy-Authorization", out user, out pass) ||
+							!prms.IsProxyAuthenticated(user, pass)))
 						{
 							// Don't count login attempts here as it would be really easy to get banned by mistake otherwise
 							resp = DefaultHttpResponse(407, req);
@@ -540,12 +553,12 @@ namespace Tiriryarai.Server
 							req.Method + (tls ? " https://" : " http://") + destination.HostnameWithPort + req.Path);
 				if (!prms.MitM.Block(destination.Hostname))
 				{
-					logger.Log(3, destination.HostnameWithPort, "RECEIVED REQUEST", req);
+					logger.Log(3, destination.Hostname, "RECEIVED REQUEST", req);
 
 					http = prms.MitM.HandleRequest(req);
 					if (http is HttpRequest modified)
 					{
-						logger.Log(12, destination.HostnameWithPort, "MODIFIED REQUEST", modified);
+						logger.Log(12, destination.Hostname, "MODIFIED REQUEST", modified);
 
 						try
 						{
@@ -563,14 +576,14 @@ namespace Tiriryarai.Server
 						if (modified.HeaderContains("Connection", "close") || resp.HeaderContains("Connection", "close"))
 							destination.Close();
 
-						logger.Log(3, destination.HostnameWithPort, "RECEIVED RESPONSE", resp);
+						logger.Log(3, destination.Hostname, "RECEIVED RESPONSE", resp);
 
 						resp = prms.MitM.HandleResponse(resp, req);
-						logger.Log(12, destination.HostnameWithPort, "MODIFIED RESPONSE", resp);
+						logger.Log(12, destination.Hostname, "MODIFIED RESPONSE", resp);
 					}
 					else if (http is HttpResponse intercepted)
 					{
-						logger.Log(3, destination.HostnameWithPort, "CUSTOM RESPONSE", intercepted);
+						logger.Log(3, destination.Hostname, "CUSTOM RESPONSE", intercepted);
 						resp = intercepted;
 					}
 					else // Should never be reached
@@ -580,7 +593,7 @@ namespace Tiriryarai.Server
 				}
 				else // Host is blocked, send gateway timeout
 				{
-					logger.Log(3, destination.HostnameWithPort, "BLOCKED REQUEST", req);
+					logger.Log(3, destination.Hostname, "BLOCKED REQUEST", req);
 					resp = DefaultHttpResponse(504, req);
 				}
 			}
@@ -604,6 +617,8 @@ namespace Tiriryarai.Server
 		private HttpResponse HomePage(HttpRequest req, string host, IPAddress client, bool tls)
 		{
 			HttpResponse resp;
+			string user = null;
+			string pass = null;
 			try
 			{
 				if (pluginHosts.Contains(host))
@@ -615,7 +630,9 @@ namespace Tiriryarai.Server
 						resp = DefaultHttpResponse(301, req);
 						resp.SetHeader("Location", prms.HttpsUrl + req.Path);
 					}
-					else if (prms.Authenticate && !req.BasicAuthenticated("Authorization", prms.Username, prms.Password))
+					else if (prms.Authenticate &&
+					         (!req.TryGetBasicAuthentication("Authorization", out user, out pass) ||
+					         !prms.IsAuthenticated(user, pass)))
 					{
 						cache.GetIPStatistics(client).LoginAttempt();
 						resp = DefaultHttpResponse(401, req);
@@ -653,7 +670,9 @@ namespace Tiriryarai.Server
 						resp = DefaultHttpResponse(301, req);
 					}
 					// From here on, only HTTPS is allowed
-					else if (prms.Authenticate && !req.BasicAuthenticated("Authorization", prms.Username, prms.Password))
+					else if (prms.Authenticate &&
+							 (!req.TryGetBasicAuthentication("Authorization", out user, out pass) ||
+							 !prms.IsAuthenticated(user, pass)))
 					{
 						cache.GetIPStatistics(client).LoginAttempt();
 						resp = DefaultHttpResponse(401, req);
@@ -722,7 +741,7 @@ namespace Tiriryarai.Server
 					body = Resources.TIMEOUT_PAGE;
 					break;
 				case 500:
-					body = Resources.ERR_PAGE;
+					body = string.Format(Resources.ERR_PAGE, Resources.GENERIC_ERR_MSG);
 					break;
 				case 502:
 					body = Resources.GATE_PAGE;
@@ -741,8 +760,9 @@ namespace Tiriryarai.Server
 		private void DefaultHttpBody(HttpResponse resp, string contentType, byte[] body, bool chunked, HttpRequest req)
 		{
 			resp.SetHeader("Content-Type", contentType);
-			if (req != null)
+			if (req != null && body.Length > 500)
 			{
+				// Don't encode if the body is trivially small
 				resp.PickEncoding(req, new Dictionary<ContentEncoding, int> {
 					{ContentEncoding.Br, 3},
 					{ContentEncoding.GZip, 2},
@@ -786,68 +806,12 @@ namespace Tiriryarai.Server
 			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(Resources.METHOD_PAGE), false, req);
 		}
 
-		private void PrintStartup()
+		private void DefaultInternalError(HttpResponse resp, HttpRequest req, string msg)
 		{
-			Console.WriteLine("                                                   WWWWWWW                                          ");
-			Console.WriteLine("                                        WWNNNXXXKKK0OOkkkkOOO0KKXNNWWWWW                            ");
-			Console.WriteLine("                                WWNNNNXXXXXKKKKKKKKK00000OOOOkkkOkkkkxxkkOKXW                       ");
-			Console.WriteLine("                          WNNXXXXXXXXNNNNNNNNNNNNKK0OOOKXXXXXXNNXXXXXK0OkkxxxOKNW                   ");
-			Console.WriteLine("                     WNXKKKKKXXNNWWWWWWWWWWWWWWWN0xxOkd0XXXXXXXXXNNNNNNNNNXXKOkkOKN                 ");
-			Console.WriteLine("              NK0KNNK000KXNWWWWWWWWWWWWWWWWWWWWWXkox0OdONNNNNXXXXXXNNNNNNNNNNNNX0kkO0OkKW           ");
-			Console.WriteLine("            WKxdodxxkKNWWWWWWWWWWWWWWWWWWWWWWWWWKdoxkxdkNWWWNNNNXXXXNNNNNNNNNNNNXKx:,,,;l0W         ");
-			Console.WriteLine("          WXkoxO00OxdxOXNWWWWNNNWWWWWWWWWWWWWWWW0xk0XOooKWWWWWWNNNNNNNNXKXXNNNXOdc;codl,.,dX        ");
-			Console.WriteLine("         W0dokK0OKXXKOxxkKNWN0xx0KXNWWWWWWWWWWWNOk0XN0ocOWWWWWWWWWNNK0kolxKNKkl:coxOOo:;,..:0W      ");
-			Console.WriteLine("        N0ddOKXOkKXXXXXKOxx0X0dxOkkkkO0KXNWWWWWXkOXNXOo:dNWWWWX0Oxoooodl:d0klcoxkxdolc:::;'.;OW     ");
-			Console.WriteLine("       W0dx0KXXkxOKKKKKXXKOxkxox0KK0OkxdddONWWWKk0XXXOo;cKWNOocccldxkkxl;clcokkdollccccc::;,.;0W    ");
-			Console.WriteLine("      WKxk0KKX0ddO0000000KKKOdlokOOOO0K00xdKWWNOOXNNXOd:;kW0lokO00kxddo:,:oxkxdlccccccccc::;,'lX    ");
-			Console.WriteLine("      NOk0KKXXOodkOOOOOOOOOO0Oxdxxl:cok0KOd0WWNOOXNXXOdc,oNOoOX0ko:,;clccododxdlccccccccc:::;,:OW   ");
-			Console.WriteLine("      N0OKKXNKxoxkkkOOOOOOOkkkkkko;.':x0KKxkNWXOKXKKKOdl,:0koOKOkc'.'ldooooodxxocccccccc:::::;:OW   ");
-			Console.WriteLine("      NOOKXXN0ooxOkkkkkkkkkkkkkkkx:''lO0XXxdKWKOKK000Odo;,oll00OOo,.;xxooooooxxolcccccc::::::,;kW   ");
-			Console.WriteLine("      XkkKXNNOlokOkkkkkkkkkkkkkkkkxc:x0KXNOo0X0O0OkO0Odc''::dK0OOkl:ldooooooodxolcccc:::::;;;,,xW   ");
-			Console.WriteLine("      XkkKXNNkodkOOkkkkkkkkkkkkkkkOo:x00KX0ox0OK0kxk0x:;;,';xK0kkdccooooooolodxolcc::::::;;;;,,dW   ");
-			Console.WriteLine("      XkkKXNXxoxOOOOkkkkkkkkkkkkkkOo:dO0KXKolxOXXOxxdc;cl,.;kKOkxd:coooooooloddolcc:::::;;;;;,'dW   ");
-			Console.WriteLine("      Xkk0XNKdokOOkkOkkkkkkkkkkkkkOo:dO0KXXxloONXKKOl;clc;.;k0kxdo:cdoooollloddoc::::::;;;;;;''dN   ");
-			Console.WriteLine("      Xxx0XN0dxOOOOOOOOOkkkkkkkkkO0o:dOO0KXKxdOXKKKKd:ccc:.,oxdddo:cddooollloddlc:::::;;;;,,,''dW   ");
-			Console.WriteLine("      XxokXNKxxO0OOOOOOkkkkkkkkkkkOklldkO0K0xxKX0000d;:c::'.,clllccdxollllllodol:::::;;;,,,,,..xW   ");
-			Console.WriteLine("      NxoxKNXkxO00OOOOkkkkkkkkkkkkkkOxlldkOkokXKOOOOl;::::,..,;;:oxxoollllllodol:::;;;,,,,,,'.'xW   ");
-			Console.WriteLine("      NOodkXN0xk00OkkkkkkkkkkkkkkkkkkOOxllooo0KOkkkxc,::::;'.';lxdllllllllloddoc:;;;;;,,,,,'..;OW   ");
-			Console.WriteLine("      W0xdldO0xddl:;,,;:ldxkkkkkkkkkkkO00xlcd00kkxxd;,::;;;,.,dxc;;clllllllool:,'....'',,''..'cK    ");
-			Console.WriteLine("       XOkdlccc;'.........',:loxkkkkkkxkkOxcd0Oxxxxo,,::;;;,..:;,,,;:clc:;,'...........'''',,,dN    ");
-			Console.WriteLine("       WN0kkxdl,.':c:;.. ......':ldxxxxxxxdccxOxxddl,,::;;,...',,,,,;;,'..     .,,;;,..,;;;;:xX     ");
-			Console.WriteLine("         XOO00kc'cOOkx:..,xOd;.....;ldxxxxxoccdxdddl,,::;,...''''''....';,..   'loodo;..''''oN      ");
-			Console.WriteLine("         KxOXXKd:l0NNN0:..:oo:'.    .':oxxxxoccodxkd;'::;'...'''.....'oO0d,.  .o0KKKd:'',,,'oN      ");
-			Console.WriteLine("         KxOXXX0dod0NWWKc.  .      .''.'cdxxxoccdkkd,';;'...'''...''..,:;'.  'xNWNKxc;,',,,.lN      ");
-			Console.WriteLine("         KxOKXXKdlld0KXNNOl;'''',:cllc;'',;:ccc::odl'';'...'''..':lllc;,,,;cxKNNK0xc;'',,,,.lN      ");
-			Console.WriteLine("         KxOKKKklcclllodxkOOOOO00Okxdo:',:c:;;,,,,;;'.'...,,;:;',cdkOOOkkOOOOkxoc;;,,'.',,,.lN      ");
-			Console.WriteLine("         Xxk0K0xccllccodxxxxxxxxxxdoollllllllcc::'......,clllc:,';codxxxxddddxxdl;''''.',,,.lN      ");
-			Console.WriteLine("         Xkk0KX0oldxxdoodddddddxxdddoddddddool:,,;:;...,,;;;;;;;;;:clloooooloolc:;;;;;,,,,,.oN      ");
-			Console.WriteLine("         NkxOKXOlcdxxxxxxxdddddddddxxxxddddddc,';odoc;cc,';;:;;;;;;;;:::::::::clcc:;;;;;,,''xW      ");
-			Console.WriteLine("         NOdkKXklcdxxxxxxxxddddolloddxdddddo:,';ldxkkxoc;'',;;::::;;;;;;::::::cclcc:;;;;;,';O       ");
-			Console.WriteLine("         W0dxKXkcloodxxxxxxddlc;,,,;codddoc;',:ok000KOxoc;'',;;;::;,,,',,;::::ccll:;;;;;;,'cK       ");
-			Console.WriteLine("          XxdOKkllc;cdxxdddoc;,;coool::::,,,:ok0KOxdxO0Oxoc;,,,,,;:loc:,',::ccclll,',;;;;,,xW       ");
-			Console.WriteLine("          W0dkKOllc,;lddddlc;,;ldxOKK0kdooxk0KX0dc:cc:oOK0OkdolldkO0koc;'',::cclc;..,;:;,'cK        ");
-			Console.WriteLine("           NkdOOoc;;ccclol:,,;ldk0XXNNNNNNNNXOo;;oOOo,.,lkKXXXKKXXKKOxoc:,',:cc:,''.';:;';kW        ");
-			Console.WriteLine("            Nkdkxc;,col::;,,:oxOKXNNNNNNNKOdc,',cxKkc,....;okKXXXXXK0Okdoc;,,::;;;'.';;,,dN         ");
-			Console.WriteLine("             Nkdxd:,:odxdlcoxOKXNNNNKkdol;'...';clol;'.......,ldxO0KK0OOkxdl::clc:'.,,,;xN          ");
-			Console.WriteLine("              WKxdo::oxkKKKKXNNNNNNNKkkkkxdoc;'';:c:,....',:clloodxO000OOkkxxddol:,,,;oKW           ");
-			Console.WriteLine("                N0dc:ldkKNNNNNNNNNNNNWNNWWWWNXOd:'''..,cx0KNNNNNXXK000OOOkkxxxdol::cd0W             ");
-			Console.WriteLine("                  NK0OkxOKNNNNNNNNWNWWWNWWWWWWWWXxlc:o0NWNNNNNNXXKK000OOkkkxxxdoxO0XW               ");
-			Console.WriteLine("                      WXK0KXXNNNWWWWWWWWWWWWWWWWWWNNNNWWWNNNNNXXKK000OOkkkxxoox0W                   ");
-			Console.WriteLine("                         WNXKKXXNNNWWWWWWWWWWWWWWWWWWWWWNNNNXXKKK000OOkkxdoox0N                     ");
-			Console.WriteLine("                            WWNXXXXXXXXNNNNWWWWWWWWWWNNNNNNXXKKK00Okxdoodx0XW                       ");
-			Console.WriteLine("                                 WWNXXXKKK0000000000000OOOOkkxxdddddxkOKNW                          ");
-			Console.WriteLine("                                        WWNNXXKKK0000000000OOO00KKXNW                               ");
-			Console.WriteLine();
-			if (!prms.Authenticate)
-			{
-				Console.WriteLine("NOTICE: Authentication for accessing admin pages is disabled.");
-				Console.WriteLine("Hosting Tiriryarai on the public internet or an untrusted network is strongly discouraged.");
-				Console.WriteLine("If this was unintentional, see the help by using the \"-h\" flag.");
-				Console.WriteLine();
-			}
-			Console.WriteLine("Tiriryarai has started!");
-			Console.WriteLine("Configure your client to use host " + prms.Hostname + " and port " + prms.Port + " as a HTTP proxy.");
-			Console.WriteLine("Then open http://" + Resources.HOSTNAME + " for more information.");
+			resp.Status = 500;
+			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(
+				string.Format(Resources.ERR_PAGE, msg)
+			), false, req);
 		}
 	}
 }

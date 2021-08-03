@@ -75,8 +75,9 @@ namespace Tiriryarai.Http
 						using (HttpChunkStream chunkStream = new HttpChunkStream(ms, ChunkMode.WriteEncoded))
 						{
 							chunkStream.Write(value, 0, value.Length);
-							Body = ms.ToArray();
+							chunkStream.FlushFinal();
 						}
+						Body = ms.ToArray();
 					}
 				}
 				else
@@ -469,26 +470,39 @@ namespace Tiriryarai.Http
 		}
 
 		/// <summary>
-		/// Checks if the message has HTTP basic authentication in the given header
-		/// matching the given username and password. Assumes valid username and password.
+		/// Checks if the message has HTTP basic authentication in the given header and returns
+		/// its username and password. Assumes valid username and password.
 		/// </summary>
-		/// <returns><c>true</c>, if authenticated, <c>false</c> otherwise.</returns>
+		/// <returns><c>true</c>, if the username and password was found, <c>false</c> otherwise.</returns>
 		/// <param name="header">The header that should contain the basic authentication.</param>
-		/// <param name="user">The given username.</param>
-		/// <param name="pass">The given password.</param>
-		public bool BasicAuthenticated(string header, string user, string pass)
+		/// <param name="user">The username in the given header.</param>
+		/// <param name="pass">The password in the given header.</param>
+		public bool TryGetBasicAuthentication(string header, out string user, out string pass)
 		{
+			user = null;
+			pass = null;
+
+			int colon;
 			string[] auth;
 			string[] authArr = GetHeader(header);
 			if (authArr != null && authArr.Length > 0 && authArr[0] != null)
 			{
 				auth = authArr[0].Split(' ');
-				if (auth != null && auth.Length > 1 && auth[0] != null && "basic".Equals(auth[0].ToLower().Trim()))
+				try
 				{
-					return Convert.ToBase64String(
-						Encoding.Default.GetBytes(user + ":" + pass)
-					).Equals(auth[1]);
+					if (auth != null && auth.Length > 1 && auth[0] != null && "basic".Equals(auth[0].ToLower().Trim()))
+					{
+						auth[0] = Encoding.UTF8.GetString(Convert.FromBase64String(auth[1]));
+						colon = auth[0].IndexOf(':');
+						if (colon < 0)
+							return false;
+
+						user = auth[0].Substring(0, colon);
+						pass = auth[0].Substring(colon + 1, auth[0].Length - colon - 1);
+						return true;
+					}
 				}
+				catch { /* Authentication was not valid */ }
 			}
 			return false;
 		}

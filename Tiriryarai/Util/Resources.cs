@@ -132,11 +132,7 @@ namespace Tiriryarai.Util
 		public static string ERR_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>500 Internal Server Error</h1>" +
 			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
-			"<p>" +
-			  "Unfortunately that which shouldn't happen just happened. " +
-			  "For help, please post a description of what you did to cause this error " +
-			  "<a href=\"https://github.com/william-stacken/Tiriryarai/issues\">here</a>." +
-			"</p>"
+			"<p>{0}</p>"
 		);
 
 		public static string GATE_PAGE = string.Format(TEMPLATE_PAGE,
@@ -150,6 +146,17 @@ namespace Tiriryarai.Util
 			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
 			"<p>Failed to obtain a reply from the requested host.</p>"
 		);
+
+		public static string GENERIC_ERR_MSG =
+			"Unfortunately an error has occured in cyberspace. " +
+			"For help, please post a description of what you did to cause this error " +
+			"<a href=\"https://github.com/william-stacken/Tiriryarai/issues\">here</a>.";
+
+		public static string LOG_ERR_MSG =
+			"The log file could not be read. This may mean that the log is corrupt, or " +
+			"that Tiriryarai does not have the correct password required to decrypt it. " +
+			"You can attempt to change the configured password and try to view the log again. " +
+			"Otherwise you must delete it as there is no other way to recover it.";
 
 		public static string LOG_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>Log Management</h1>" +

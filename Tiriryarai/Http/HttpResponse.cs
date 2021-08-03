@@ -144,7 +144,7 @@ namespace Tiriryarai.Http
 			HttpMessage http;
 			string respLine = ReadLine(stream);
 			if (respLine == null)
-				throw new Exception("Unexpected EOF");
+				throw new IOException("Unexpected EOF");
 
 			string[] respLineParts = respLine.Split(' ');
 			if (respLineParts.Length < 3)

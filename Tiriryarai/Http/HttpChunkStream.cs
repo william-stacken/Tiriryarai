@@ -41,6 +41,7 @@ namespace Tiriryarai.Http
 		private Stream basestream;
 		private readonly ChunkMode mode;
 		private readonly bool leaveOpen;
+		bool hasFlushed = false;
 
 		public HttpChunkStream(Stream stream, ChunkMode mode)
 			:this(stream, mode, false) { }
@@ -68,8 +69,22 @@ namespace Tiriryarai.Http
 
 		public override void Flush()
 		{
-			// Do nothing
-			// TODO Should basestream.Flush() be called here?
+			ThrowIfDisposed();
+
+			basestream.Flush();
+		}
+
+		public void FlushFinal()
+		{
+			ThrowIfDisposed();
+
+			// Write terminating zero length chunk
+			if (!hasFlushed)
+			{
+				Write(new byte[0], 0, 0);
+				hasFlushed = true;
+			}
+			basestream.Flush();
 		}
 
 		public override int Read(byte[] buffer, int offset, int count)
@@ -111,9 +126,6 @@ namespace Tiriryarai.Http
 
 		protected override void Dispose(bool disposing)
 		{
-			// Write terminating zero length chunk
-			Write(new byte[0], 0, 0);
-			Flush();
 			try
 			{
 				if (disposing && !leaveOpen && basestream != null)

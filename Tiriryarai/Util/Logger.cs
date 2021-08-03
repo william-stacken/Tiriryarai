@@ -22,7 +22,10 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Collections.Concurrent;
+
+using System.Security.Cryptography;
 
 using Tiriryarai.Http;
 
@@ -33,33 +36,330 @@ namespace Tiriryarai.Util
 	/// </summary>
 	public class Logger
 	{
+		internal class LogEntry
+		{
+			public byte[] Raw { get; }
+
+			public LogEntry(string head, object obj)
+			{
+				Raw = Encoding.Default.GetBytes(
+					($"<strong>{head} {DateTime.Now.ToLongDateString()} {DateTime.Now.ToLongTimeString()}</strong>\n" +
+						ToLogEntryBody(obj, null, null)).Replace("\n", "\n<br>")
+				);
+			}
+
+			public LogEntry(string head, HttpRequest req, uint verbosity)
+			{
+				Raw = Encoding.Default.GetBytes(
+					($"<strong>{head} {DateTime.Now.ToLongDateString()} {DateTime.Now.ToLongTimeString()}</strong>\n" +
+						req.RequestLine + ToLogEntryBody((HttpMessage)req, verbosity)).Replace("\n", "\n<br>")
+				);
+			}
+
+			public LogEntry(string head, HttpResponse resp, uint verbosity)
+			{
+				Raw = Encoding.Default.GetBytes(
+					($"<strong>{head} {DateTime.Now.ToLongDateString()} {DateTime.Now.ToLongTimeString()}</strong>\n" +
+						resp.ResponseLine + ToLogEntryBody((HttpMessage)resp, verbosity)).Replace("\n", "\n<br>")
+				);
+			}
+
+			private string ToLogEntryBody(HttpMessage http, uint verbosity)
+			{
+				StringBuilder builder = new StringBuilder();
+				if (verbosity > 3)
+					builder.Append(http.RawHeaders);
+				if (verbosity > 6)
+				{
+					byte[] contentDecodedBody = http.DecodedBody;
+					if (contentDecodedBody.Length > 0)
+					{
+						string htmlTag = null;
+						string type = http.ContentTypeWithoutCharset;
+						string category = type != null ? type.Split('/')[0].ToLower().Trim() : null;
+
+						if ("image".Equals(category))
+						{
+							htmlTag = "<img alt=\"Image\" style=\"max-width:300px;max-height:300px\" src=\"data:{0};base64,{1}\"/>";
+						}
+						else if ("audio".Equals(category))
+						{
+							htmlTag = "<audio controls src=\"data:{0};base64,{1}\">" +
+								  "Your browser cannot play audio." +
+								"</audio>";
+						}
+						else if ("video".Equals(category))
+						{
+							htmlTag = "<video controls src=\"data:{0};base64,{1}\">" +
+								  "Your browser cannot play video." +
+								"</video>";
+						}
+						else
+						{
+							// TODO Firefox treats some content types as attachments, which is why
+							// all non-text categories are treated as plain text, should be investigated further
+							if (!"text".Equals(category))
+								type = null;
+						}
+						builder.Append(ToLogEntryBody(contentDecodedBody, type, htmlTag));
+					}
+				}
+				else if (http.Body.Length > 0)
+				{
+					builder.Append("<p style=\"color:red\">---Skipping body---</p>");
+				}
+				builder.Append("\n\n");
+				return builder.ToString();
+			}
+
+			private string ToLogEntryBody(object obj, string type, string htmlTag)
+			{
+				byte[] raw = obj is byte[] rawObj ? rawObj : Encoding.Default.GetBytes(obj.ToString());
+				if (type == null)
+					type = "text/plain";
+				if (htmlTag == null)
+					htmlTag = "<iframe height=\"400\" width=\"100%\" src=\"data:{0};base64,{1}\"></iframe>\n<br>\n<br>";
+
+				return string.Format(
+						htmlTag,
+						type,
+						Convert.ToBase64String(raw)
+				);
+			}
+		}
+
+		internal class LogStream : Stream
+		{
+			private Stream basestream;
+			private readonly bool mode;
+			private readonly bool leaveOpen;
+
+			private static readonly RNGCryptoServiceProvider RAND = new RNGCryptoServiceProvider();
+
+			private CryptoStream decryptStream = null;
+			private int bytesLeft = 0;
+
+			private byte[] key;
+			private byte[] ivBuf;
+			private byte[] lenBuf;
+			private byte[] memBuf;
+
+			public LogStream(Stream stream, byte[] key, bool mode)
+				: this(stream, key, mode, false) { }
+
+			public LogStream(Stream stream, byte[] key, bool mode, bool leaveOpen)
+			{
+				this.basestream = stream;
+				this.key = key != null ? key : new byte[16];
+				this.mode = mode;
+				this.leaveOpen = leaveOpen;
+
+				ivBuf = new byte[this.key.Length >> 1];
+				lenBuf = new byte[sizeof(int)];
+				memBuf = new byte[8192];
+			}
+
+			public override bool CanRead { get { return mode; } }
+
+			public override bool CanWrite { get { return !mode; } }
+
+			public override bool CanSeek { get { return false; } }
+
+			public override long Length => throw new NotSupportedException("Length is not supported");
+
+			public override long Position
+			{
+				get => throw new NotSupportedException("Position is not supported");
+				set => throw new NotImplementedException("Position is not supported");
+			}
+
+			public override void Flush()
+			{
+				ThrowIfDisposed();
+
+				basestream.Flush();
+			}
+
+			public override long Seek(long offset, SeekOrigin origin)
+			{
+				throw new NotSupportedException("Seek is not supported");
+			}
+
+			public override void SetLength(long value)
+			{
+				throw new NotSupportedException("SetLength is not supported");
+			}
+
+			public LogEntry Read()
+			{
+				// TODO
+				throw new NotImplementedException("Reading a log entry is not implemented.");
+			}
+
+			public override int Read(byte[] buffer, int offset, int count)
+			{
+				if (!CanRead)
+					throw new InvalidOperationException("LogEntryStream is not readable");
+				ThrowIfDisposed();
+				ThrowIfInvalidParams(buffer, offset, count);
+
+				int readCount, realReadCount;
+
+				if (decryptStream == null)
+				{
+					if (basestream.Read(ivBuf, 0, ivBuf.Length) < ivBuf.Length)
+						return 0;
+
+					if (basestream.Read(lenBuf, 0, lenBuf.Length) < lenBuf.Length)
+						return 0;
+
+					bytesLeft = BitConverter.ToInt32(lenBuf, 0);
+					if (bytesLeft < 0)
+						throw new InvalidDataException("Entry Length was negative");
+
+					MemoryStream ms = new MemoryStream();
+					CopyBasestreamTo(ms, bytesLeft);
+					ms.Position = 0;
+
+					Aes aes = Aes.Create();
+					aes.Padding = PaddingMode.PKCS7;
+					ICryptoTransform decryptor = aes.CreateDecryptor(key, ivBuf);
+					decryptStream = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+				}
+				readCount = count > bytesLeft ? bytesLeft : count;
+				realReadCount = decryptStream.Read(buffer, offset, readCount);
+
+				bytesLeft -= readCount;
+
+				if (realReadCount <= 0)
+					return 0;
+
+				if (bytesLeft < 1)
+				{
+					decryptStream.Flush();
+					decryptStream.Close();
+					decryptStream = null;
+				}
+				return realReadCount;
+			}
+
+			public void Write(LogEntry entry)
+			{
+				Write(entry.Raw, 0, entry.Raw.Length);
+			}
+
+			public override void Write(byte[] buffer, int offset, int count)
+			{
+				if (!CanWrite)
+					throw new InvalidOperationException("LogEntryStream is not writable");
+				ThrowIfDisposed();
+				ThrowIfInvalidParams(buffer, offset, count);
+
+				RAND.GetBytes(ivBuf);
+
+				using (Aes aes = Aes.Create())
+				{
+					aes.Padding = PaddingMode.PKCS7;
+					ICryptoTransform encryptor = aes.CreateEncryptor(key, ivBuf);
+
+					using (MemoryStream ms = new MemoryStream())
+					{
+						using (CryptoStream encryptStream = new CryptoStream(ms, encryptor, CryptoStreamMode.Write, leaveOpen: true))
+						{
+							encryptStream.Write(buffer, offset, count);
+							encryptStream.FlushFinalBlock();
+						}
+						using (BinaryWriter br = new BinaryWriter(basestream, Encoding.Default, leaveOpen: true))
+						{
+							br.Write(ivBuf);
+							br.Write((int)ms.Length);
+							br.Write(ms.ToArray());
+						}
+					}
+				}
+			}
+
+			protected override void Dispose(bool disposing)
+			{
+				try
+				{
+					if (disposing && !leaveOpen && basestream != null)
+						basestream.Close();
+				}
+				finally
+				{
+					basestream = null;
+				}
+				base.Dispose(disposing);
+			}
+
+			private void CopyBasestreamTo(Stream s, int max)
+			{
+				int bytesToRead, read;
+				int bytesRead = 0;
+				while (bytesRead < max)
+				{
+					bytesToRead = memBuf.Length < max - bytesRead ? memBuf.Length : max - bytesRead;
+					read = basestream.Read(memBuf, 0, bytesToRead);
+					if (read <= 0)
+						return;
+					s.Write(memBuf, 0, read);
+					bytesRead += read;
+				}
+			}
+
+			private void ThrowIfDisposed()
+			{
+				if (basestream == null)
+					throw new ObjectDisposedException(null, "Stream is disposed.");
+			}
+
+			private void ThrowIfInvalidParams(byte[] buffer, int offset, int count)
+			{
+				if (buffer == null)
+					throw new ArgumentNullException(nameof(buffer));
+				if (offset < 0)
+					throw new ArgumentOutOfRangeException(nameof(offset));
+				if (count < 0)
+					throw new ArgumentOutOfRangeException(nameof(count));
+				if (buffer.Length - offset < count)
+					throw new ArgumentException("Invalid offset and count for the given buffer");
+			}
+		}
+
 		private static string UNINIT_MSG = "Logger is not initialized, call Initialize() first.";
-		private static string LOG_SUFFIX = ".log.html";
+		private static string LOG_SUFFIX = ".tirlog";
 
 		private static Logger instance = null;
+
 		private string logDir = null;
 		private uint verbosity;
 		private uint maxLogSize;
+		private byte[] key;
 
-		private ConcurrentDictionary<string, byte> logMutex;
-
-		private Logger()
-		{
-			logMutex = new ConcurrentDictionary<string, byte>();
-		}
+		private Logger() { }
 
 		/// <summary>
-		/// Initialize the logger with a specified logDir and verbosity.
+		/// Initialize the logger with a specified log directory and verbosity.
 		/// </summary>
 		/// <param name="logDir">The directory to contain the log files.</param>
 		/// <param name="verbosity">The higher the value, the more objects will be logged.</param>
 		/// <param name="maxLogSize">The largest size allowed for a log in MiB. If a log
 		/// exceeds this size, it is deleted.</param>
-		public void Initialize(string logDir, uint verbosity, uint maxLogSize)
+		/// <param name="key">The key that will be used to encypt logs. If null or
+		/// empty, the logs will not be encrypted.</param>
+		public void Initialize(string logDir, uint verbosity, uint maxLogSize, byte[] key)
 		{
+			if (this.logDir != null)
+				throw new InvalidOperationException("Logger has already been initialized.");
+
+			if (key != null && key.Length != 16 && key.Length != 24 && key.Length != 32)
+				throw new ArgumentException("Invalid key length: " + key.Length);
+
 			this.logDir = logDir ?? throw new ArgumentNullException(nameof(logDir));
 			this.verbosity = verbosity;
 			this.maxLogSize = maxLogSize;
+			this.key = key;
 			Directory.CreateDirectory(logDir);
 		}
 
@@ -77,45 +377,8 @@ namespace Tiriryarai.Util
 		}
 
 		/// <summary>
-		/// Logs the specified HTTP request to the log with the given filename if the verbosity is higher than the given level.
-		/// </summary>
-		/// <param name="level">The log level to use for the object.</param>
-		/// <param name="logname">The filename of the log in the log directory.</param>
-		/// <param name="head">A descriptive name for the object or log entry.</param>
-		/// <param name="req">The HTTP request to log.</param>
-		public void Log(uint level, string logname, string head, HttpRequest req)
-		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
-			if (logname == null || head == null || req == null)
-				throw new ArgumentNullException(nameof(logname) + " " + nameof(head) + " " + nameof(req));
-			if (level < 1 || verbosity < level)
-				return;
-
-			Log(level, logname, head, req.RequestLine + ToLogEntry(req) + "\n\n");
-		}
-
-		/// <summary>
-		/// Logs the specified HTTP response to the log with the given filename if the verbosity is higher than the given level.
-		/// </summary>
-		/// <param name="level">The log level to use for the object.</param>
-		/// <param name="logname">The filename of the log in the log directory.</param>
-		/// <param name="head">A descriptive name for the object or log entry.</param>
-		/// <param name="resp">The HTTP response to log.</param>
-		public void Log(uint level, string logname, string head, HttpResponse resp)
-		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
-			if (logname == null || head == null || resp == null)
-				throw new ArgumentNullException(nameof(logname) + " " + nameof(head) + " " + nameof(resp));
-			if (level < 1 || verbosity < level)
-				return;
-
-			Log(level, logname, head, resp.ResponseLine + ToLogEntry(resp) + "\n\n");
-		}
-
-		/// <summary>
-		/// Logs the specified object to the log with the given filename if the verbosity is higher than the given level.
+		/// Logs the specified object to the log with the given filename on a new thread if the
+		/// verbosity is higher than the given level.
 		/// </summary>
 		/// <param name="level">The log level to use for the object.</param>
 		/// <param name="logname">The filename of the log in the log directory.</param>
@@ -123,50 +386,61 @@ namespace Tiriryarai.Util
 		/// <param name="obj">The object to log.</param>
 		public void Log(uint level, string logname, string head, object obj)
 		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
-			if (logname == null || head == null || obj == null)
-				throw new ArgumentNullException(nameof(logname) + " " + nameof(head) + " " + nameof(obj));
 			if (level < 1 || verbosity < level)
 				return;
+			ThrowIfInvalid(level, logname, head, obj);
 
-			Log(level, logname, head, ToLogEntry(Encoding.Default.GetBytes(obj.ToString())) + "\n\n");
+			Task.Run(() => LogInternal(level, logname, head, obj));
 		}
 
-		private void Log(uint level, string logname, string head, string entry)
+		private void LogInternal(uint level, string logname, string head, object obj)
 		{
-			int attempts = 0;
-			while (!logMutex.TryAdd(logname, 0))
-			{
-				if (++attempts > 5)
-				{
-					Console.WriteLine("Warning: Request to log object timed out.");
-					return;
-				}
-				Thread.Sleep(100);
-			}
+			int attempts = 5;
+			LogEntry entry;
 			try
 			{
 				// Delete the log if it has gotten too large
-				if (Exists(logname))
+				if (Exists(logname) && LogSize(logname) >> 20 >= maxLogSize)
+					DeleteLog(logname);
+
+				// TODO Is there a need to check what the object is before calling
+				// ToLogEntry
+				if (obj is HttpRequest req)
 				{
-					if (LogSize(logname) >> 20 >= maxLogSize)
-						DeleteLog(logname);
+					entry = new LogEntry(head, req, verbosity);
+				}
+				else if (obj is HttpResponse resp)
+				{
+					entry = new LogEntry(head, resp, verbosity);
+				}
+				else
+				{
+					entry = new LogEntry(head, obj);
 				}
 
-				using (var s = new FileStream(LogPath(logname), FileMode.Append))
+				for (int i = 0; i < attempts; i++)
 				{
-					byte[] header = Encoding.UTF8.GetBytes(
-						$"<strong>{head} {DateTime.Now.ToLongTimeString()} {DateTime.Now.ToLongDateString()}</strong>\n<br>"
-					);
-					byte[] rawEntry = Encoding.UTF8.GetBytes(entry.Replace("\n", "\n<br>"));
-					s.Write(header, 0, header.Length);
-					s.Write(rawEntry, 0, rawEntry.Length);
+					try
+					{
+						using (var s = new FileStream(LogPath(logname), FileMode.Append))
+						{
+							using (var entryStream = new LogStream(s, key, mode: false))
+							{
+								entryStream.Write(entry);
+								entryStream.Flush();
+							}
+						}
+						return;
+					}
+					catch
+					{
+						Thread.Sleep(100);
+					}
 				}
 			}
-			finally
+			catch (Exception e)
 			{
-				logMutex.TryRemove(logname, out _);
+				LogException(e);
 			}
 		}
 
@@ -217,6 +491,9 @@ namespace Tiriryarai.Util
 		{
 			get
 			{
+				if (logDir == null)
+					throw new InvalidOperationException(UNINIT_MSG);
+
 				string[] files = Directory.GetFiles(logDir, "*" + LOG_SUFFIX);
 				for (int i = 0; i < files.Length; i++)
 				{
@@ -235,8 +512,7 @@ namespace Tiriryarai.Util
 		/// <param name="logname">The specified log.</param>
 		public bool Exists(string logname)
 		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
+			ThrowIfInvalid(logname);
 
 			string logPath = LogPath(logname);
 			return logPath != null ?
@@ -247,17 +523,16 @@ namespace Tiriryarai.Util
 		/// <summary>
 		/// Returns the write time for the given log file.
 		/// </summary>
-		/// <returns>The last write time if the log file exists; otherwise, <c>Datetime.MaxValue</c>.</returns>
+		/// <returns>The last write time if the log file exists.</returns>
 		/// <param name="logname">Name of the log file.</param>
 		public DateTime LastWriteTime(string logname)
 		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
+			ThrowIfInvalid(logname);
 
 			string logPath = LogPath(logname);
 			return logPath != null ?
 			    File.GetLastWriteTime(logPath) :
-			    DateTime.MaxValue;
+				throw new FileNotFoundException(logname);
 		}
 
 		/// <summary>
@@ -278,17 +553,16 @@ namespace Tiriryarai.Util
 		/// <summary>
 		/// Gets the size of the given log file in bytes.
 		/// </summary>
-		/// <returns>The size in bytes if the log file exists; otherwise, <c>-1</c>.</returns>
+		/// <returns>The size in bytes if the log file exists.</returns>
 		/// <param name="logname">Name of the log file.</param>
 		public long LogSize(string logname)
 		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
+			ThrowIfInvalid(logname);
 
 			string logPath = LogPath(logname);
 			return logPath != null ?
 				new FileInfo(logPath).Length :
-				-1;
+				throw new FileNotFoundException(logname);
 		}
 
 		/// <summary>
@@ -300,33 +574,37 @@ namespace Tiriryarai.Util
 		{
 			// TODO This method should be changed to write a log to a given stream instead since
 			// reading the entire log into memory is not ideal.
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
+			int attempts = 5;
+			ThrowIfInvalid(logname);
 
-			int attempts = 0;
-			while (!logMutex.TryAdd(logname, 0))
-			{
-				if (++attempts > 5)
-				{
-					throw new IOException("Request to read log timed out.");
-				}
-				Thread.Sleep(100);
-			}
-			try
+			string path = LogPath(logname);
+			if (path != null && File.Exists(path))
 			{
 				using (MemoryStream ms = new MemoryStream())
 				{
-					using (var fs = new FileStream(LogPath(logname), FileMode.Open))
+					for (int i = 0; i < attempts; i++)
 					{
-						fs.CopyTo(ms);
-						return ms.ToArray();
+						try
+						{
+							using (var s = new FileStream(path, FileMode.Open))
+							{
+								using (var logStream = new LogStream(s, key, mode: true))
+								{
+									logStream.CopyTo(ms);
+									return ms.ToArray();
+								}
+							}
+						}
+						catch (Exception e)
+						{
+							LogException(e);
+							Thread.Sleep(100);
+						}
 					}
 				}
+				throw new IOException("Failed to read the log");
 			}
-			finally
-			{
-				logMutex.TryRemove(logname, out _);
-			}
+			throw new FileNotFoundException(logname);
 		}
 
 		/// <summary>
@@ -335,12 +613,26 @@ namespace Tiriryarai.Util
 		/// <param name="logname">Name of the log file to delete.</param>
 		public void DeleteLog(string logname)
 		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
+			int attempts = 5;
+			ThrowIfInvalid(logname);
 
 			string path = LogPath(logname);
-			if (path != null)
-				File.Delete(path);
+			if (path != null && File.Exists(path))
+			{
+				for (int i = 0; i < attempts; i++)
+				{
+					try
+					{
+						File.Delete(path);
+						return;
+					}
+					catch
+					{
+						Thread.Sleep(100);
+					}
+				}
+				throw new IOException("Failed to delete the log");
+			}
 		}
 
 		private string LogPath(string logname)
@@ -357,70 +649,20 @@ namespace Tiriryarai.Util
 			return null;
 		}
 
-		private string ToLogEntry(HttpMessage http)
+		private void ThrowIfInvalid(string logname)
 		{
-			StringBuilder builder = new StringBuilder();
-			if (verbosity > 3)
-				builder.Append(http.RawHeaders);
-			if (verbosity > 6)
-			{
-				byte[] contentDecodedBody = http.DecodedBody;
-				if (contentDecodedBody.Length > 0)
-				{
-					string htmlTag = null;
-					string type = http.ContentTypeWithoutCharset;
-					string category = type != null ? type.Split('/')[0].ToLower().Trim() : null;
-
-					if ("image".Equals(category))
-					{
-						htmlTag = "<img alt=\"Image\" style=\"max-width:300px;max-height:300px\" src=\"data:{0};base64,{1}\"/>";
-					}
-					else if ("audio".Equals(category))
-					{
-						htmlTag = "<audio controls src=\"data:{0};base64,{1}\">" +
-							  "Your browser cannot play audio." +
-							"</audio>";
-					}
-					else if ("video".Equals(category))
-					{
-						htmlTag = "<video controls src=\"data:{0};base64,{1}\">" +
-							  "Your browser cannot play video." +
-							"</video>";
-					}
-					else
-					{
-						// TODO Firefox treats some content types as attachments, which is why
-						// all non-text categories are treated as plain text, should be investigated further
-						if (!"text".Equals(category))
-							type = null;
-					}
-					builder.Append(ToLogEntry(contentDecodedBody, type, htmlTag));
-				}
-			}
-			else if (http.Body.Length > 0)
-			{
-				builder.Append("<p style=\"color:red\">---Skipping body---.</p>");
-			}
-			return builder.ToString();
+			if (logDir == null)
+				throw new InvalidOperationException(UNINIT_MSG);
+			if (logname == null)
+				throw new ArgumentNullException("Arguments may not be null");
 		}
 
-		private string ToLogEntry(byte[] rawObj)
+		private void ThrowIfInvalid(uint level, string logname, string head, object obj)
 		{
-			return ToLogEntry(rawObj, null, null);
-		}
-
-		private string ToLogEntry(byte[] rawObj, string type, string htmlTag)
-		{
-			if (type == null)
-				type = "text/plain";
-			if (htmlTag == null)
-				htmlTag = "<iframe height=\"400\" width=\"100%\" src=\"data:{0};base64,{1}\"></iframe>";
-
-			return string.Format(
-					htmlTag,
-					type,
-					Convert.ToBase64String(rawObj)
-			);
+			if (logDir == null)
+				throw new InvalidOperationException(UNINIT_MSG);
+			if (logname == null || head == null || obj == null)
+				throw new ArgumentNullException("Arguments may not be null");
 		}
 	}
 }

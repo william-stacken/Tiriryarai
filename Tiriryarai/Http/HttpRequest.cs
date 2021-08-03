@@ -163,7 +163,7 @@ namespace Tiriryarai.Http
 			string uri;
 			string reqLine = ReadLine(stream);
 			if (reqLine == null)
-				throw new Exception("Unexpected EOF");
+				throw new IOException("Unexpected EOF");
 
 			string[] reqLineParts = reqLine.Split(' ');
 			if (reqLineParts.Length < 3)
