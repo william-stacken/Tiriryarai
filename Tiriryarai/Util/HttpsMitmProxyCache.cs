@@ -81,7 +81,7 @@ namespace Tiriryarai.Util
 
 			mutex = new ConcurrentDictionary<object, byte>();
 			cache = new MemoryCache("HttpsMitmProxyCache", new NameValueCollection {
-				{"CacheMemoryLimitMegabytes", "" + mbMemoryLimit},
+				{"CacheMemoryLimitMegabytes", "" + mbMemoryLimit}, // TODO add to proxy config
 				{"PollingInterval", TimeSpan.FromMilliseconds(pollingInterval).ToString()},
 			});
 
@@ -120,18 +120,18 @@ namespace Tiriryarai.Util
 			X509Certificate2Collection collection;
 			if (!File.Exists(filepath))
 			{
-				AddOrGetExisting(key, pkcs12Factory, val => (val as X509Certificate2).NotAfter);
+				AddOrGetExisting(key, pkcs12Factory, val => (val as X509Certificate2)?.NotAfter ?? DateTime.MinValue);
 			}
 			else
 			{
 				collection = new X509Certificate2Collection();
 				collection.Import(filepath, Resources.PFX_PASS, X509KeyStorageFlags.PersistKeySet);
 				X509Certificate2 cert = collection[0];
-				if (cert.NotAfter < DateTime.Now)
+				if (cert.NotAfter < DateTime.UtcNow)
 				{
 					cert = pkcs12Get();
 				}
-				AddOrGetExisting(key, path => cert, val => (val as X509Certificate2).NotAfter);
+				AddOrGetExisting(key, path => cert, val => (val as X509Certificate2)?.NotAfter ?? DateTime.MinValue);
 			}
 		}
 
@@ -173,7 +173,7 @@ namespace Tiriryarai.Util
 				// TODO Clear the cache somehow since essentially everything in the cache is now invalid.
 				File.Delete(path);
 				return CreateRootCertFile(path);
-			}, val => (val as X509Certificate2).NotAfter) as X509Certificate2;
+			}, val => (val as X509Certificate2)?.NotAfter ?? DateTime.MinValue) as X509Certificate2;
 		}
 
 		/// <summary>
@@ -189,7 +189,7 @@ namespace Tiriryarai.Util
 					throw new ArgumentException("certPath must be a string");
 				File.Delete(path);
 				return CreateOCSPCertFile(path);
-			}, val => (val as X509Certificate2).NotAfter) as X509Certificate2;
+			}, val => (val as X509Certificate2)?.NotAfter ?? DateTime.MinValue) as X509Certificate2;
 		}
 
 		/// <summary>
@@ -225,7 +225,7 @@ namespace Tiriryarai.Util
 			}
 
 			return AddOrGetExisting(hostname, CreateCertificate, val => (
-				val as X509Certificate2).NotAfter
+				val as X509Certificate2)?.NotAfter ?? DateTime.MinValue
 			) as X509Certificate2;
 		}
 
@@ -237,7 +237,7 @@ namespace Tiriryarai.Util
 		public X509Crl GetCrl()
 		{
 			return AddOrGetExisting("-crl-", CreateCRL, val => (
-				val as X509Crl).NextUpdate
+				val as X509Crl)?.NextUpdate ?? DateTime.MinValue
 			) as X509Crl;
 		}
 
@@ -254,7 +254,7 @@ namespace Tiriryarai.Util
 			if (ocspReq == null)
 				throw new ArgumentNullException(nameof(ocspReq));
 			return AddOrGetExisting(ocspReq.CertificateID, CreateOCSPResponse, val => (
-			    val as X509OCSPResponse).ExpiryDate
+			    val as X509OCSPResponse)?.ExpiryDate ?? DateTime.MinValue
 			) as X509OCSPResponse;
 		}
 
@@ -266,7 +266,7 @@ namespace Tiriryarai.Util
 		public IpClientStats GetIPStatistics(IPAddress ip)
 		{
 			// TODO Expire statistics after 14 days, maybe there is a better time frame?
-			return AddOrGetExisting("$" + ip, val => new IpClientStats(), val => DateTime.Now.AddDays(14)
+			return AddOrGetExisting("$" + ip, val => new IpClientStats(), val => DateTime.UtcNow.AddDays(14)
 			) as IpClientStats;
 		}
 
@@ -315,8 +315,8 @@ namespace Tiriryarai.Util
 			{
 				SerialNumber = rootSn,
 				IssuerName = Resources.ROOT_CA_SUBJECT_NAME,
-				NotBefore = DateTime.Now.AddYears(-5),
-				NotAfter = DateTime.Now.AddYears(20),
+				NotBefore = DateTime.UtcNow.AddYears(-5),
+				NotAfter = DateTime.UtcNow.AddYears(20),
 				SubjectName = Resources.ROOT_CA_SUBJECT_NAME,
 				SubjectPublicKey = rootKey,
 				Hash = Resources.HASH_ALGORITHM
@@ -359,8 +359,8 @@ namespace Tiriryarai.Util
 			{
 				SerialNumber = ocspSn,
 				IssuerName = Resources.ROOT_CA_SUBJECT_NAME,
-				NotBefore = DateTime.Now.AddDays(-2),
-				NotAfter = DateTime.Now.AddMonths(3),
+				NotBefore = DateTime.UtcNow.AddDays(-2),
+				NotAfter = DateTime.UtcNow.AddMonths(3),
 				SubjectName = string.Format(Resources.CERT_SUBJECT_NAME, "TiriryaraiCA OCSP Responder"),
 				SubjectPublicKey = ocspKey,
 				Hash = Resources.HASH_ALGORITHM
@@ -429,8 +429,8 @@ namespace Tiriryarai.Util
 			{
 				SerialNumber = sn,
 				IssuerName = Resources.ROOT_CA_SUBJECT_NAME,
-				NotBefore = DateTime.Now.AddDays(-20),
-				NotAfter = DateTime.Now.AddYears(1),
+				NotBefore = DateTime.UtcNow.AddDays(-20),
+				NotAfter = DateTime.UtcNow.AddYears(1),
 				SubjectName = string.Format(Resources.CERT_SUBJECT_NAME, hostname),
 				SubjectPublicKey = subjectKey,
 				Hash = Resources.HASH_ALGORITHM
@@ -478,8 +478,8 @@ namespace Tiriryarai.Util
 			X509CRLBuilder cb = new X509CRLBuilder(1)
 			{
 				Issuer = Resources.ROOT_CA_SUBJECT_NAME,
-				ThisUpdate = DateTime.Now.AddDays(-1),
-				NextUpdate = DateTime.Now.AddDays(3),
+				ThisUpdate = DateTime.UtcNow.AddDays(-1),
+				NextUpdate = DateTime.UtcNow.AddDays(3),
 				Hash = Resources.HASH_ALGORITHM
 			};
 			cb.Extensions.Add(akie);
@@ -502,14 +502,14 @@ namespace Tiriryarai.Util
 				X509BasicOCSPResponseBuilder builder = new X509BasicOCSPResponseBuilder
 				{
 					Name = string.Format(Resources.CERT_SUBJECT_NAME, "TiriryaraiCA OCSP Responder"),
-					ProducedAt = DateTime.Now,
+					ProducedAt = DateTime.UtcNow,
 					Hash = Resources.HASH_ALGORITHM
 				};
 				builder.AddSingleResponse(new X509OCSPSingleResponse(
 					certId,
 					X509OCSPSingleResponse.CertStatus.Good,
-					DateTime.Now.AddDays(-1),
-					DateTime.Now.AddDays(3)
+					DateTime.UtcNow.AddDays(-1),
+					DateTime.UtcNow.AddDays(3)
 				));
 				builder.AddCertificate(ca);
 				ocsp = new X509OCSPResponse(X509OCSPResponse.ResponseStatus.Successful, builder);

@@ -70,7 +70,7 @@ namespace Tiriryarai.Util
 
 		public static string WELCOME_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>Welcome to Tiriryarai!</h1>" +
-			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<a href=\"/\"><img src=\"/favicon.ico\" alt=\"logo\"/></a>" +
 			"<h3>Options</h3>" +
 			"<ul>" +
 			  "<li><a href=\"/cert\">CA Certificate</a></li>" +
@@ -98,7 +98,7 @@ namespace Tiriryarai.Util
 
 		public static string AUTH_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>401 Unauthorized</h1>" +
-			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<a href=\"https://" + HOSTNAME + "\"><img src=\"https://" + HOSTNAME + "/favicon.ico\" alt=\"logo\"/></a>" +
 			"<p>Please enter your credentials to access the admin pages.</p>"
 		);
 
@@ -109,13 +109,13 @@ namespace Tiriryarai.Util
 
 		public static string NON_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>404 Not Found</h1>" +
-			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<a href=\"https://" + HOSTNAME + "\"><img src=\"https://" + HOSTNAME + "/favicon.ico\" alt=\"logo\"/></a>" +
 			"<p>That page was not found.</p>"
 		);
 
 		public static string METHOD_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>405 Method Not Allowed</h1>" +
-			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<a href=\"https://" + HOSTNAME + "\"><img src=\"https://" + HOSTNAME + "/favicon.ico\" alt=\"logo\"/></a>" +
 			"<p>Sorry, you can't do that.</p>"
 		);
 
@@ -129,21 +129,27 @@ namespace Tiriryarai.Util
 			"<p>Tiriryarai fell asleep.</p>"
 		);
 
+		public static string MEDIA_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>415 Unsupported Media Type</h1>" +
+			"<a href=\"https://" + HOSTNAME + "\"><img src=\"https://" + HOSTNAME + "/favicon.ico\" alt=\"logo\"/></a>" +
+			"<p>The provided entity body is not short and stout.</p>"
+		);
+
 		public static string ERR_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>500 Internal Server Error</h1>" +
-			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<a href=\"https://" + HOSTNAME + "\"><img src=\"https://" + HOSTNAME + "/favicon.ico\" alt=\"logo\"/></a>" +
 			"<p>{0}</p>"
 		);
 
 		public static string GATE_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>502 Bad Gateway</h1>" +
-			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<a href=\"https://" + HOSTNAME + "\"><img src=\"https://" + HOSTNAME + "/favicon.ico\" alt=\"logo\"/></a>" +
 			"<p>The requested host sent an illegitimate response.</p>"
 		);
 
 		public static string GATE_TIMEOUT_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>504 Gateway Timeout</h1>" +
-			"<img src=\"https://" + Resources.HOSTNAME + "/favicon.ico\" alt=\"logo\"/>" +
+			"<a href=\"https://" + HOSTNAME + "\"><img src=\"https://" + HOSTNAME + "/favicon.ico\" alt=\"logo\"/></a>" +
 			"<p>Failed to obtain a reply from the requested host.</p>"
 		);
 
@@ -160,13 +166,13 @@ namespace Tiriryarai.Util
 
 		public static string LOG_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>Log Management</h1>" +
-			"<img src=\"/favicon.ico\" alt=\"logo\"/>" +
+			"<a href=\"/\"><img src=\"/favicon.ico\" alt=\"logo\"/></a>" +
 			"<table style=\"width:100%\">" +
 			  "<tr>" +
-			    "<th>Host</th>" +
-				"<th>Size (kiB)</th>" +
-				"<th>Modified</th>" +
-			    "<th>Actions</th>" +
+				"<th><strong>Host</strong></th>" +
+				"<th><strong>Size (kiB)</strong></th>" +
+				"<th><strong>Modified</strong></th>" +
+				"<th><strong>Actions</strong></th>" +
 			  "</tr>" +
 			  "{0}" +
 			"</table>"
@@ -182,6 +188,40 @@ namespace Tiriryarai.Util
 				  "<input type=\"submit\" name=\"submit\" value=\"Delete\"/>" +
 			    "</form>" +
 			  "</td>" +
+			"</tr>";
+
+		public static string CONFIG_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>Tiriryarai Configuration</h1>" +
+			"<a href=\"/\"><img src=\"/favicon.ico\" alt=\"logo\"/></a>" +
+			"{0}" +
+			"<p>" +
+			  "Here you can update the proxy configuration. Fields that are left empty will " +
+			  "be reset to their default value. Note that when the form is submitted, invalid " +
+			  "fields will be ignored, but valid fields will still update the configuration." +
+			"</p>" +
+			"<p style=\"color:red\">" +
+			  "Much of the configuration CANNOT be reverted once updated. Please read through the " +
+			  "information carefully before making changes and make sure you know what you are doing." +
+			"</p>" +
+			"<form method=\"post\" action=\"/config\">" +
+			  "<table style=\"width:100%\">" +
+				"<tr>" +
+				  "<td><strong>Property</strong></td>" +
+				  "<td><strong>Value</strong></td>" +
+				  "<td><strong>Info</strong></td>" +
+			    "</tr>" +
+			    "{1}" +
+			  "</table>" +
+			  "<input type=\"reset\">" +
+			  "<input type=\"submit\" name=\"submit\" value=\"Save\"/>" +
+			"</form>"
+		);
+
+		public static string CONFIG_ENTRY =
+			"<tr style=\"padding:10px\">" +
+			  "<td><label for=\"{0}\">{1}</label></td>" +
+			  "<td><input type=\"{2}\" id=\"{0}\" name=\"{0}\" {3}></td>" +
+			  "<td>{4}</td>" +
 			"</tr>";
 
 		public static byte[] Get(string name)

@@ -20,6 +20,8 @@
 using System;
 using System.Text;
 using System.Web;
+using System.ComponentModel;
+using System.Reflection;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.Security;
@@ -49,7 +51,7 @@ namespace Tiriryarai.Server
 	class HttpsMitmProxy
 	{
 		private TcpListener listener;
-		private HttpsMitmProxyParams prms;
+		private HttpsMitmProxyConfig prms;
 
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpHandlers;
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpsHandlers;
@@ -63,7 +65,7 @@ namespace Tiriryarai.Server
 		/// Does not start the server.
 		/// </summary>
 		/// <param name="prms">Various parameters and configuration used by the proxy.</param>
-		public HttpsMitmProxy(HttpsMitmProxyParams prms)
+		public HttpsMitmProxy(HttpsMitmProxyConfig prms)
 		{
 			if (prms.Hostname.Split(':')[0].ToLower().Equals(Resources.HOSTNAME.ToLower()))
 				throw new ArgumentException("The hostname may not be \"" + Resources.HOSTNAME + "\".");
@@ -73,14 +75,14 @@ namespace Tiriryarai.Server
 			logger = Logger.GetSingleton();
 			logger.Initialize(
 			    Path.Combine(prms.ConfigDirectory, "logs"),
-				(uint) prms.LogVerbosity,
-				(uint) prms.MaxLogSize,
+				prms.LogVerbosity,
+				prms.MaxLogSize,
 				prms.PassKey);
 			prms.MitM.Initialize(prms.ConfigDirectory);
 			httpHandlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
 			{
 				{"", (req, resp) => {
-					if (req.GetDateHeader("If-Modified-Since") != null)
+					if (req.GetDateHeader("If-Modified-Since")?.CompareTo(prms.OptionLastModifiedTime) < 0)
 						resp.Status = 304;
 
 					switch (req.Method)
@@ -91,7 +93,10 @@ namespace Tiriryarai.Server
 							StringBuilder optBuilder = new StringBuilder();
 							if (prms.LogManagement)
 								optBuilder.Append("<li><a href=\"https://" + Resources.HOSTNAME + "/logs\">Log Management</a></li>");
+							if (prms.Configuration)
+								optBuilder.Append("<li><a href=\"https://" + Resources.HOSTNAME + "/config\">Configuration</a></li>");
 
+							resp.SetHeader("Last-Modified", prms.OptionLastModifiedTime.ToString("r"));
 							DefaultHttpBody(resp, "text/html",
 								Encoding.Default.GetBytes(
 									string.Format(
@@ -114,8 +119,8 @@ namespace Tiriryarai.Server
 					{
 						case Method.HEAD:
 						case Method.GET:
-							resp.SetHeader("Last-Modified", DateTime.Now.AddYears(-1).ToString("r"));
-							resp.SetHeader("Expires", DateTime.Now.AddMonths(1).ToString("r"));
+							resp.SetHeader("Last-Modified", prms.StartTime.ToString("r"));
+							resp.SetHeader("Expires", DateTime.UtcNow.AddMonths(1).ToString("r"));
 							resp.SetHeader("Cache-Control", "public");
 							if (req.GetDateHeader("If-Modified-Since") != null)
 								resp.Status = 304;
@@ -206,9 +211,11 @@ namespace Tiriryarai.Server
 							    new X509OCSPResponse(
 								    new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest).Sign(cache.GetOCSPCA())
 							    );
-							DateTime expiry = ocspResp.ExpiryDate;
-							resp.SetHeader("Expires", expiry.ToString("r"));
-							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(expiry) < 0)
+							DateTime? expiry = ocspResp.ExpiryDate;
+							DateTime? update = ocspResp.UpdateDate;
+							resp.SetHeader("Expires", (expiry ?? DateTime.UtcNow).ToString("r"));
+							resp.SetHeader("Last-Modified", (update ?? DateTime.UtcNow).ToString("r"));
+							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(update) < 0)
 								resp.Status = 304;
 
 							DefaultHttpBody(resp, "application/ocsp-response", ocspResp.RawData, false, req);
@@ -232,7 +239,7 @@ namespace Tiriryarai.Server
 							X509Crl crl = cache.GetCrl();
 							resp.SetHeader("Expires", crl.NextUpdate.ToString("r"));
 							resp.SetHeader("Last-Modified", crl.ThisUpdate.ToString("r"));
-							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(crl.NextUpdate) < 0)
+							if (req.GetDateHeader("If-Modified-Since")?.CompareTo(crl.ThisUpdate) < 0)
 								resp.Status = 304;
 
 							DefaultHttpBody(resp, "application/pkix-crl", crl.RawData, false, req);
@@ -311,8 +318,12 @@ namespace Tiriryarai.Server
 									}
 									return;
 								case Method.POST:
-									if ("application/x-www-form-urlencoded".Equals(req.ContentTypeWithoutCharset) &&
-										"Delete".Equals(req.GetBodyParam("submit")))
+									if (!"application/x-www-form-urlencoded".Equals(req.ContentTypeWithoutCharset))
+									{
+										DefaultBadMediaType(resp, req);
+										return;
+									}
+									else if ("Delete".Equals(req.GetBodyParam("submit")))
 									{
 										logger.DeleteLog(logFile);
 									}
@@ -333,8 +344,144 @@ namespace Tiriryarai.Server
 							return;
 						}
 					}
-					resp.Status = 404;
-					DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(Resources.NON_PAGE), false, req);
+					DefaultNotFound(resp, req);
+				}},
+				{"config", (req, resp) => {
+					if (prms.Configuration)
+					{
+						logger.Log(8, req.Host, "INCOMMING CONFIG REQUEST", req);
+						string value, description;
+						HttpsMitmProxyProperty type;
+						bool success = true;
+						switch (req.Method)
+						{
+							case Method.HEAD:
+							case Method.GET:
+								DateTime lastUpdate = prms.LastModifiedTime;
+								resp.SetHeader("Last-Modified", lastUpdate.ToString("r"));
+								if (req.GetDateHeader("If-Modified-Since")?.CompareTo(lastUpdate) < 0)
+									resp.Status = 304;
+
+								StringBuilder configTable = new StringBuilder();
+								foreach (var p in prms.GetType().GetProperties())
+								{
+									if (p.GetCustomAttribute(typeof(HttpsMitmProxyAttribute), false) is HttpsMitmProxyAttribute attr &&
+										(type = attr.Type) != HttpsMitmProxyProperty.None)
+									{
+										description = (p.GetCustomAttribute(typeof(DescriptionAttribute), false)
+											as DescriptionAttribute)?.Description;
+
+										if (p.GetGetMethod() == null)
+											value = string.Empty;
+										else if (p.PropertyType.Equals(typeof(bool)) &&
+											"checkbox".Equals(attr.HtmlInputType))
+											value = (p.GetValue(prms) is bool b) && b ? "checked" : "";
+										else
+											value = "value=\"" + p.GetValue(prms) + "\"";
+
+										switch (type)
+										{
+											case HttpsMitmProxyProperty.Static:
+												value += " readonly";
+												break;
+											case HttpsMitmProxyProperty.Authentication:
+												if (!prms.ChangeAuthentication)
+													continue;
+												break;
+											case HttpsMitmProxyProperty.Log:
+												if (!prms.LogManagement)
+													continue;
+												break;
+											default:
+												break;
+										}
+
+										configTable.Append(string.Format(
+											Resources.CONFIG_ENTRY,
+											p.Name.ToLower(),
+											p.Name,
+											attr.HtmlInputType ?? "text",
+											value,
+											description ?? "(no description)"
+										));
+									}
+								}
+								if ((value = req.GetQueryParam("success")) != null)
+								{
+									description = "y".Equals(value) ?
+										"<p style=\"color:#00FF00\";>Configuration successfully saved!</p>" :
+										"<p style=\"color:#FF0000\";>Saved, but some of the configuration was invalid and ignored!</p>";
+								}
+								else
+								{
+									description = string.Empty;
+								}
+								DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(
+									string.Format(Resources.CONFIG_PAGE, description, configTable)
+								), false, req);
+								return;
+							case Method.POST:
+								if (!"application/x-www-form-urlencoded".Equals(req.ContentTypeWithoutCharset))
+								{
+									DefaultBadMediaType(resp, req);
+									return;
+								}
+								foreach (var p in prms.GetType().GetProperties())
+								{
+									if (p.GetCustomAttribute(typeof(HttpsMitmProxyAttribute), false) is HttpsMitmProxyAttribute attr &&
+										(type = attr.Type) != HttpsMitmProxyProperty.None &&
+										p.GetSetMethod() != null)
+									{
+										switch (type)
+										{
+											case HttpsMitmProxyProperty.Static:
+												continue;
+											case HttpsMitmProxyProperty.Authentication:
+												if (!prms.ChangeAuthentication)
+													continue;
+												break;
+											case HttpsMitmProxyProperty.Log:
+												if (!prms.LogManagement)
+													continue;
+												break;
+											default:
+												break;
+										}
+										try
+										{
+											value = req.GetBodyParam(p.Name);
+											if (p.PropertyType.IsPrimitive)
+											{
+												if (p.PropertyType.Equals(typeof(bool)))
+													p.SetValue(prms, "on".Equals(value));
+												else if (value != null)
+													p.SetValue(prms, Convert.ChangeType(value, p.PropertyType));
+											}
+											else if (p.PropertyType.Equals(typeof(string)))
+											{
+												p.SetValue(prms, value);
+											}
+										}
+										catch (Exception)
+										{
+											success = false;
+										}
+									}
+								}
+								break;
+							case Method.OPTIONS:
+								DefaultOptions(resp, req, Method.POST);
+								return;
+							default:
+								DefaultUnsupported(resp, req);
+								return;
+						}
+						resp.Status = 303;
+						resp.SetHeader("Location", "/config?success=" + (success ? "y" : "n"));
+						resp.ContentLength = 0;
+						return;
+					}
+					DefaultNotFound(resp, req);
 				}}
 			};
 			X509CertificateUrls urls = new X509CertificateUrls(
@@ -361,7 +508,7 @@ namespace Tiriryarai.Server
 		}
 
 		/// <summary>
-		/// Start the server and listens to incomming requests.
+		/// Starts the server and listens to incomming requests.
 		/// </summary>
 		public void Start()
 		{
@@ -406,7 +553,7 @@ namespace Tiriryarai.Server
 					try
 					{
 						if (keepAlive)
-							stream.ReadTimeout = 1000; // TODO Add this to params
+							stream.ReadTimeout = prms.KeepAliveTimeout;
 
 						req = HttpRequest.FromStream(stream);
 
@@ -467,7 +614,7 @@ namespace Tiriryarai.Server
 								try
 								{
 									if (keepAlive)
-										stream.ReadTimeout = 1000; // TODO Add this to params
+										stream.ReadTimeout = prms.KeepAliveTimeout;
 
 									req = HttpRequest.FromStream(sslStream);
 
@@ -639,6 +786,7 @@ namespace Tiriryarai.Server
 					// From here on, the client is authenticated to access the plugin page
 					else
 					{
+						cache.GetIPStatistics(client).ResetLoginAttempts();
 						resp = prms.MitM.HomePage(req);
 					}
 				}
@@ -677,14 +825,18 @@ namespace Tiriryarai.Server
 						resp = DefaultHttpResponse(401, req);
 					}
 					// From here on, the client is authenticated to access configuration pages
-					else if (httpsHandlers.TryGetValue(rootPath, out Action<HttpRequest, HttpResponse> shandler))
-					{
-						resp = DefaultHttpResponse(200, req);
-						shandler(req, resp);
-					}
 					else
 					{
-						resp = DefaultHttpResponse(404, req);
+						cache.GetIPStatistics(client).ResetLoginAttempts();
+						if (httpsHandlers.TryGetValue(rootPath, out Action<HttpRequest, HttpResponse> shandler))
+						{
+							resp = DefaultHttpResponse(200, req);
+							shandler(req, resp);
+						}
+						else
+						{
+							resp = DefaultHttpResponse(404, req);
+						}
 					}
 				}
 			}
@@ -706,7 +858,7 @@ namespace Tiriryarai.Server
 			string body = null;
 			HttpResponse resp = new HttpResponse(status);
 			resp.SetHeader("Server", "Tiriryarai/" + Resources.Version);
-			resp.SetHeader("Date", DateTime.Now.ToString("r"));
+			resp.SetHeader("Date", DateTime.UtcNow.ToString("r"));
 			if (req != null && !req.HeaderContains("Connection", "close"))
 				resp.SetHeader("Connection", "keep-alive");
 			else
@@ -799,10 +951,22 @@ namespace Tiriryarai.Server
 			resp.Allow = list.ToArray();
 		}
 
+		private void DefaultNotFound(HttpResponse resp, HttpRequest req)
+		{
+			resp.Status = 404;
+			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(Resources.NON_PAGE), false, req);
+		}
+
 		private void DefaultUnsupported(HttpResponse resp, HttpRequest req)
 		{
 			resp.Status = 405;
 			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(Resources.METHOD_PAGE), false, req);
+		}
+
+		private void DefaultBadMediaType(HttpResponse resp, HttpRequest req)
+		{
+			resp.Status = 415;
+			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(Resources.MEDIA_PAGE), false, req);
 		}
 
 		private void DefaultInternalError(HttpResponse resp, HttpRequest req, string msg)

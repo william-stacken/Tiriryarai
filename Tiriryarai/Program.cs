@@ -18,8 +18,9 @@
 //
 
 using System;
-using System.Linq;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Reflection;
 
 using Mono.Options;
 
@@ -33,108 +34,75 @@ namespace TiriryaraiMitm
 	/// </summary>
 	class Program
 	{
-		private static string Hostname = null;
-		private static ushort Port = 8081;
-		private static uint? Verbosity = 4;
-		private static uint? MaxLogSize = null;
-		private static string Username = null;
-		private static string Password = null;
-		private static string ProxyPass = null;
-		private static string ConfigDir = null;
-		private static bool Logs = true;
-		private static bool IgnoreCerts = false;
-		private static int ReadTimeout = -1;
-		private static bool Help = false;
-		private static bool Version = false;
-
 		/// <summary>
 		/// The entry point of the program, where the program control starts and ends.
 		/// </summary>
 		/// <param name="args">The command-line arguments.</param>
 		static void Main(string[] args)
 		{
-			List<string> extraOpts = new List<string>();
-			OptionSet opts = new OptionSet
-			{
-				{ "d|hostname=", "The hostname of the server, if it has one. If not given, it will default " +
-					"to the system IP.", (host) => Hostname = host },
-				{ "p|port=", "The port the server will listen on, 8081 by default.", (ushort port) => Port = port },
-				{ "v|verbosity=", "The higher this value is, the more information will be logged.", (uint v) => Verbosity = v },
-				{ "s|logsize=", "The maximum allowed size of a log in MiB before it is deleted.", (uint s) => MaxLogSize = s },
-				{ "u|username=", "The username required for basic HTTP authentication if one should be required. " +
-					"Used for both proxy authentication and accessing the admin pages.", (user) => Username = user },
-				{ "w|password=", "The password required for accessing the admin pages if one should be required. " +
-					"It will be sent securely using HTTPS only.", (pass) => Password = pass },
-				{ "x|proxypass=", "The password required for using the proxy if one should be required. " +
-					"It will be sent insecurely using HTTP and should not be the same as the admin password.", (pass) => ProxyPass = pass },
-				{ "c|configdir=", "The directory where certificates, server configuration, and log files will be stored.", (dir) => ConfigDir = dir },
-				{ "l|logs",  "Activate admin remote log management via the web interface. Usage of authentication recommended.", _ => Logs = true },
-				{ "i|ignorecerts",  "Ignore invalid certificates when sending HTTPS requests.", _ => IgnoreCerts = true },
-				{ "t|timeout=",  "The time in milliseconds to wait on a client request before terminating the connection.", (int t) => ReadTimeout = t },
-				{ "h|help",  "Show help", _ => Help = true },
-				{ "version",  "Show version and about info", _ => Version = true }
-			};
-
-			try
-			{
-				extraOpts = opts.Parse(args);
-			}
-			catch (OptionException e)
-			{
-				Console.WriteLine(e.Message);
-				Help = true;
-			}
-
-			if (Help || extraOpts.Count > 0)
-			{
-				opts.WriteOptionDescriptions(Console.Out);
-				Environment.Exit(-1);
-			}
-
-			if (Version)
-			{
-				Console.WriteLine("Tiriryarai " + Resources.Version);
-				Console.WriteLine("Copyright (C) 2021 William Stackenäs");
-				Console.WriteLine("License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>");
-				Console.WriteLine("This is free software: you are free to change and redistribute it."); 
-				Console.WriteLine("There is NO WARRANTY, to the extent permitted by law.");
-				Environment.Exit(-1);
-			}
-
-			// https://stackoverflow.com/questions/699852/how-to-find-all-the-classes-which-implement-a-given-interface
-			IEnumerable<IManInTheMiddle> mitms =
-			    from t in Resources.Assembly.GetTypes()
-			    where t.GetInterfaces().Contains(typeof(IManInTheMiddle))
-			          && t.GetConstructor(Type.EmptyTypes) != null
-			    select Activator.CreateInstance(t) as IManInTheMiddle;
-													  
+			bool help = false;
+			bool version = false;
 			HttpsMitmProxy proxy = null;
+			List<string> extraOpts = null;
 			try
 			{
-				if (mitms.Count() == 0)
-					throw new Exception(
-					    "No man-in-the-middle handler plugins could be found in the assembly." +
-					    "Please add a class that inplements the IManInTheMiddle interface."
-					);
-				if (mitms.Count() != 1)
-					throw new NotSupportedException(
-						"Multiple man-in-the-middle handler plugins in not supported." +
-						"Please only add one class that implements the IManInTheMiddle interface."
-					);
-				HttpsMitmProxyParams prms = new HttpsMitmProxyParams(mitms.ElementAt(0), Port)
+				HttpsMitmProxyConfig prms = new HttpsMitmProxyConfig();
+				OptionSet opts = new OptionSet
 				{
-					Username = Username,
-					Password = Password,
-					ProxyPassword = ProxyPass,
-					ConfigDirectory = ConfigDir,
-					LogVerbosity = Verbosity,
-					MaxLogSize = MaxLogSize,
-					Hostname = Hostname,
-					LogManagement = Logs,
-					IgnoreCertificates = IgnoreCerts,
-					AllowedLoginAttempts = 5,
-					ReadTimeout = ReadTimeout
+					{ "h|help",  "Show help", _ => help = true },
+					{ "version",  "Show version and about info", _ => version = true }
 				};
+
+				foreach (var p in prms.GetType().GetProperties())
+				{
+					string cli;
+					if (p.GetCustomAttribute(typeof(HttpsMitmProxyAttribute), false) is HttpsMitmProxyAttribute attr &&
+						(cli = attr.CliPrototype) != null)
+					{
+						string description = (p.GetCustomAttribute(typeof(DescriptionAttribute), false)
+							as DescriptionAttribute)?.Description;
+
+						opts.Add(cli, description ?? "<no description>", v => {
+							if (p.PropertyType.IsPrimitive)
+							{
+								if (p.PropertyType.Equals(typeof(bool)))
+									p.SetValue(prms, true);
+								else
+									p.SetValue(prms, Convert.ChangeType(v, p.PropertyType));
+							}
+							else
+							{
+								p.SetValue(prms, v);
+							}
+						});
+					}
+				}
+
+				try
+				{
+					extraOpts = opts.Parse(args);
+				}
+				catch (OptionException e)
+				{
+					Console.WriteLine(e.Message);
+					help = true;
+				}
+
+				if (help || extraOpts?.Count > 0)
+				{
+					opts.WriteOptionDescriptions(Console.Out);
+					Environment.Exit(-1);
+				}
+				else if (version)
+				{
+					Console.WriteLine("Tiriryarai " + Resources.Version);
+					Console.WriteLine("Copyright (C) 2021 William Stackenäs");
+					Console.WriteLine("License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>");
+					Console.WriteLine("This is free software: you are free to change and redistribute it.");
+					Console.WriteLine("There is NO WARRANTY, to the extent permitted by law.");
+					Environment.Exit(-1);
+				}
+
 				PrintStartup();
 				if (!prms.Authenticate)
 				{
@@ -143,17 +111,18 @@ namespace TiriryaraiMitm
 					Console.WriteLine("If this was unintentional, see the help by using the \"-h\" flag.");
 					Console.WriteLine();
 				}
-				Console.Write("Generating Certificates... ");
+				Console.Write("Starting server and generating certificates... ");
 				proxy = new HttpsMitmProxy(prms);
 				Console.WriteLine("Done");
 				Console.WriteLine();
+
 				Console.WriteLine("Tiriryarai has started!");
 				Console.WriteLine("Configure your client to use host " + prms.Hostname + " and port " + prms.Port + " as a HTTP proxy.");
 				Console.WriteLine("Then open http://" + Resources.HOSTNAME + " for more information.");
 			}
 			catch (Exception e)
 			{
-				Console.WriteLine("\nFailed to initialize server:\n" + e.Message);
+				Console.WriteLine("\nFailed to initialize server:\n" + e);
 				Environment.Exit(-2);
 			}
 			proxy.Start();

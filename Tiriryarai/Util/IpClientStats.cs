@@ -45,5 +45,13 @@ namespace Tiriryarai.Util
 		{
 			loginAttempts++;
 		}
+
+		/// <summary>
+		/// Resets the login attempt counter of the IP client
+		/// </summary>
+		public void ResetLoginAttempts()
+		{
+			loginAttempts = 0;
+		}
 	}
 }

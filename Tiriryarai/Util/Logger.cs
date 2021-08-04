@@ -334,7 +334,7 @@ namespace Tiriryarai.Util
 
 		private string logDir = null;
 		private uint verbosity;
-		private uint maxLogSize;
+		private int maxLogSize;
 		private byte[] key;
 
 		private Logger() { }
@@ -345,22 +345,31 @@ namespace Tiriryarai.Util
 		/// <param name="logDir">The directory to contain the log files.</param>
 		/// <param name="verbosity">The higher the value, the more objects will be logged.</param>
 		/// <param name="maxLogSize">The largest size allowed for a log in MiB. If a log
-		/// exceeds this size, it is deleted.</param>
+		/// exceeds this size, it is deleted. Zero or negative values are treated as infinite.</param>
 		/// <param name="key">The key that will be used to encypt logs. If null or
 		/// empty, the logs will not be encrypted.</param>
-		public void Initialize(string logDir, uint verbosity, uint maxLogSize, byte[] key)
+		public void Initialize(string logDir, uint verbosity, int maxLogSize, byte[] key)
 		{
 			if (this.logDir != null)
 				throw new InvalidOperationException("Logger has already been initialized.");
 
-			if (key != null && key.Length != 16 && key.Length != 24 && key.Length != 32)
-				throw new ArgumentException("Invalid key length: " + key.Length);
+			Key = key;
 
 			this.logDir = logDir ?? throw new ArgumentNullException(nameof(logDir));
 			this.verbosity = verbosity;
 			this.maxLogSize = maxLogSize;
-			this.key = key;
 			Directory.CreateDirectory(logDir);
+		}
+
+		public byte[] Key
+		{
+			set
+			{
+				if (key != null && key.Length != 16 && key.Length != 24 && key.Length != 32)
+					throw new ArgumentException("Invalid key length: " + key.Length);
+
+				key = value;
+			}
 		}
 
 		/// <summary>
@@ -400,7 +409,7 @@ namespace Tiriryarai.Util
 			try
 			{
 				// Delete the log if it has gotten too large
-				if (Exists(logname) && LogSize(logname) >> 20 >= maxLogSize)
+				if (Exists(logname) && maxLogSize > 0 && LogSize(logname) >> 20 >= maxLogSize)
 					DeleteLog(logname);
 
 				// TODO Is there a need to check what the object is before calling
@@ -580,11 +589,11 @@ namespace Tiriryarai.Util
 			string path = LogPath(logname);
 			if (path != null && File.Exists(path))
 			{
-				using (MemoryStream ms = new MemoryStream())
+				for (int i = 0; i < attempts; i++)
 				{
-					for (int i = 0; i < attempts; i++)
+					try
 					{
-						try
+						using (MemoryStream ms = new MemoryStream())
 						{
 							using (var s = new FileStream(path, FileMode.Open))
 							{
@@ -595,11 +604,11 @@ namespace Tiriryarai.Util
 								}
 							}
 						}
-						catch (Exception e)
-						{
-							LogException(e);
-							Thread.Sleep(100);
-						}
+					}
+					catch (Exception e)
+					{
+						LogException(e);
+						Thread.Sleep(100);
 					}
 				}
 				throw new IOException("Failed to read the log");

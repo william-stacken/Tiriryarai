@@ -132,25 +132,53 @@ namespace Tiriryarai.Crypto
 		public string Type { get; }
 
 		/// <summary>
-		/// Gets the expiry datetime of the OCSP reqponse, which is defined as the
-		/// earliest expiry datetime among the single responses.
+		/// Gets the update datetime of the OCSP reqponse, which is defined as the
+		/// latest "this update" timestamp among the single responses.
 		/// </summary>
-		/// <returns>The expiry datetime.</returns>
-		public DateTime ExpiryDate
+		/// <returns>The expiry datetime if it exists; otherwise <c>null</c>.</returns>
+		public DateTime? UpdateDate
 		{
 			get
 			{
 				if (Type.Equals(TYPE_BASIC_OID))
 				{
 					X509BasicOCSPResponseBuilder ocsp = Response as X509BasicOCSPResponseBuilder;
-					DateTime earliestExpiry = DateTime.MaxValue;
+					DateTime? latestUpdate = DateTime.MinValue;
+
+					foreach (X509OCSPSingleResponse single in ocsp.SingleResponses)
+					{
+						if (single.ThisUpdate > latestUpdate)
+							latestUpdate = single.NextUpdate;
+					}
+					return latestUpdate > DateTime.MinValue ? latestUpdate : null;
+				}
+				else
+				{
+					throw new ArgumentException("Unsupported response type");
+				}
+			}
+		}
+
+		/// <summary>
+		/// Gets the expiry datetime of the OCSP reqponse, which is defined as the
+		/// earliest "next update" datetime among the single responses.
+		/// </summary>
+		/// <returns>The expiry datetime if it exists; otherwise <c>null</c>.</returns>
+		public DateTime? ExpiryDate
+		{
+			get
+			{
+				if (Type.Equals(TYPE_BASIC_OID))
+				{
+					X509BasicOCSPResponseBuilder ocsp = Response as X509BasicOCSPResponseBuilder;
+					DateTime? earliestExpiry = DateTime.MaxValue;
 
 					foreach (X509OCSPSingleResponse single in ocsp.SingleResponses)
 					{
 						if (single.NextUpdate < earliestExpiry)
 							earliestExpiry = single.NextUpdate;
 					}
-					return earliestExpiry;
+					return earliestExpiry < DateTime.MinValue ? earliestExpiry : null;
 				}
 				else
 				{

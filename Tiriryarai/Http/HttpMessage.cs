@@ -387,7 +387,10 @@ namespace Tiriryarai.Http
 			if (dt != null && dt.Length > 1)
 			{
 				if (DateTime.TryParse(string.Join(", ", dt), out DateTime result))
-					return result;
+				{
+					DateTime.SpecifyKind(result, DateTimeKind.Local);
+					return result.ToUniversalTime();
+				}
 			}
 			return null;
 		}
