@@ -136,7 +136,8 @@ namespace Tiriryarai.Http
 			if (i >= 0)
 			{
 				string query = Uri.Substring(i + 1);
-				return ExtractUrlEncodedParam(query, param);
+				return ParseUrlEncoded(query).TryGetValue(param.ToLower(), out string value) ?
+					value : null;
 			}
 			return null;
 		}

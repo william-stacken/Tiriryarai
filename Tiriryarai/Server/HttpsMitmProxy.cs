@@ -51,7 +51,7 @@ namespace Tiriryarai.Server
 	class HttpsMitmProxy
 	{
 		private TcpListener listener;
-		private HttpsMitmProxyConfig prms;
+		private HttpsMitmProxyConfig conf;
 
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpHandlers;
 		private readonly Dictionary<string, Action<HttpRequest, HttpResponse>> httpsHandlers;
@@ -64,39 +64,31 @@ namespace Tiriryarai.Server
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Server.HttpsMitmProxy"/> class.
 		/// Does not start the server.
 		/// </summary>
-		/// <param name="prms">Various parameters and configuration used by the proxy.</param>
-		public HttpsMitmProxy(HttpsMitmProxyConfig prms)
+		/// <param name="conf">Various parameters and configuration used by the proxy.</param>
+		public HttpsMitmProxy(HttpsMitmProxyConfig conf)
 		{
-			if (prms.Hostname.Split(':')[0].ToLower().Equals(Resources.HOSTNAME.ToLower()))
-				throw new ArgumentException("The hostname may not be \"" + Resources.HOSTNAME + "\".");
-
-			string host = prms.Hostname;
-			Directory.CreateDirectory(prms.ConfigDirectory);
+			string host = conf.Hostname;
+			Directory.CreateDirectory(conf.ConfigDirectory);
 			logger = Logger.GetSingleton();
-			logger.Initialize(
-			    Path.Combine(prms.ConfigDirectory, "logs"),
-				prms.LogVerbosity,
-				prms.MaxLogSize,
-				prms.PassKey);
-			prms.MitM.Initialize(prms.ConfigDirectory);
+
 			httpHandlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
 			{
 				{"", (req, resp) => {
-					if (req.GetDateHeader("If-Modified-Since")?.CompareTo(prms.OptionLastModifiedTime) < 0)
+					if (req.GetDateHeader("If-Modified-Since")?.CompareTo(conf.OptionLastModifiedTime) < 0)
 						resp.Status = 304;
 
 					switch (req.Method)
 					{
 						case Method.HEAD:
 						case Method.GET:
-							string httpsUrl = prms.HttpsUrl;
+							string httpsUrl = conf.HttpsUrl;
 							StringBuilder optBuilder = new StringBuilder();
-							if (prms.LogManagement)
+							if (conf.LogManagement)
 								optBuilder.Append("<li><a href=\"https://" + Resources.HOSTNAME + "/logs\">Log Management</a></li>");
-							if (prms.Configuration)
+							if (conf.Configuration)
 								optBuilder.Append("<li><a href=\"https://" + Resources.HOSTNAME + "/config\">Configuration</a></li>");
 
-							resp.SetHeader("Last-Modified", prms.OptionLastModifiedTime.ToString("r"));
+							resp.SetHeader("Last-Modified", conf.OptionLastModifiedTime.ToString("r"));
 							DefaultHttpBody(resp, "text/html",
 								Encoding.Default.GetBytes(
 									string.Format(
@@ -119,7 +111,7 @@ namespace Tiriryarai.Server
 					{
 						case Method.HEAD:
 						case Method.GET:
-							resp.SetHeader("Last-Modified", prms.StartTime.ToString("r"));
+							resp.SetHeader("Last-Modified", conf.StartTime.ToString("r"));
 							resp.SetHeader("Expires", DateTime.UtcNow.AddMonths(1).ToString("r"));
 							resp.SetHeader("Cache-Control", "public");
 							if (req.GetDateHeader("If-Modified-Since") != null)
@@ -257,7 +249,7 @@ namespace Tiriryarai.Server
 			httpsHandlers = new Dictionary<string, Action<HttpRequest, HttpResponse>>
 			{
 				{"logs", (req, resp) => {
-					if (prms.LogManagement)
+					if (conf.LogManagement)
 					{
 						logger.Log(8, req.Host, "INCOMMING LOG REQUEST", req);
 						DateTime? ifModified = req.GetDateHeader("If-Modified-Since");
@@ -347,7 +339,7 @@ namespace Tiriryarai.Server
 					DefaultNotFound(resp, req);
 				}},
 				{"config", (req, resp) => {
-					if (prms.Configuration)
+					if (conf.Configuration)
 					{
 						logger.Log(8, req.Host, "INCOMMING CONFIG REQUEST", req);
 						string value, description;
@@ -357,16 +349,18 @@ namespace Tiriryarai.Server
 						{
 							case Method.HEAD:
 							case Method.GET:
-								DateTime lastUpdate = prms.LastModifiedTime;
+								DateTime lastUpdate = conf.LastModifiedTime;
 								resp.SetHeader("Last-Modified", lastUpdate.ToString("r"));
 								if (req.GetDateHeader("If-Modified-Since")?.CompareTo(lastUpdate) < 0)
 									resp.Status = 304;
 
 								StringBuilder configTable = new StringBuilder();
-								foreach (var p in prms.GetType().GetProperties())
+								foreach (var p in conf.GetType().GetProperties())
 								{
 									if (p.GetCustomAttribute(typeof(HttpsMitmProxyAttribute), false) is HttpsMitmProxyAttribute attr &&
-										(type = attr.Type) != HttpsMitmProxyProperty.None)
+										(type = attr.Type) != HttpsMitmProxyProperty.None &&
+										(conf.ChangeAuthentication || ((type & HttpsMitmProxyProperty.Authentication) == 0)) &&
+										(conf.LogManagement || ((type & HttpsMitmProxyProperty.Log) == 0)))
 									{
 										description = (p.GetCustomAttribute(typeof(DescriptionAttribute), false)
 											as DescriptionAttribute)?.Description;
@@ -375,26 +369,12 @@ namespace Tiriryarai.Server
 											value = string.Empty;
 										else if (p.PropertyType.Equals(typeof(bool)) &&
 											"checkbox".Equals(attr.HtmlInputType))
-											value = (p.GetValue(prms) is bool b) && b ? "checked" : "";
+											value = (p.GetValue(conf) is bool b) && b ? "checked" : "";
 										else
-											value = "value=\"" + p.GetValue(prms) + "\"";
+											value = "value=\"" + p.GetValue(conf) + "\"";
 
-										switch (type)
-										{
-											case HttpsMitmProxyProperty.Static:
-												value += " readonly";
-												break;
-											case HttpsMitmProxyProperty.Authentication:
-												if (!prms.ChangeAuthentication)
-													continue;
-												break;
-											case HttpsMitmProxyProperty.Log:
-												if (!prms.LogManagement)
-													continue;
-												break;
-											default:
-												break;
-										}
+										if ((type & HttpsMitmProxyProperty.Static) != 0)
+											value += " readonly";
 
 										configTable.Append(string.Format(
 											Resources.CONFIG_ENTRY,
@@ -410,7 +390,7 @@ namespace Tiriryarai.Server
 								{
 									description = "y".Equals(value) ?
 										"<p style=\"color:#00FF00\";>Configuration successfully saved!</p>" :
-										"<p style=\"color:#FF0000\";>Saved, but some of the configuration was invalid and ignored!</p>";
+										"<p style=\"color:#FF0000\";>Configuration contained invalid values and was not saved!</p>";
 								}
 								else
 								{
@@ -421,52 +401,30 @@ namespace Tiriryarai.Server
 								), false, req);
 								return;
 							case Method.POST:
+								bool clearCache = false;
 								if (!"application/x-www-form-urlencoded".Equals(req.ContentTypeWithoutCharset))
 								{
 									DefaultBadMediaType(resp, req);
 									return;
 								}
-								foreach (var p in prms.GetType().GetProperties())
+								try
 								{
-									if (p.GetCustomAttribute(typeof(HttpsMitmProxyAttribute), false) is HttpsMitmProxyAttribute attr &&
-										(type = attr.Type) != HttpsMitmProxyProperty.None &&
-										p.GetSetMethod() != null)
-									{
-										switch (type)
-										{
-											case HttpsMitmProxyProperty.Static:
-												continue;
-											case HttpsMitmProxyProperty.Authentication:
-												if (!prms.ChangeAuthentication)
-													continue;
-												break;
-											case HttpsMitmProxyProperty.Log:
-												if (!prms.LogManagement)
-													continue;
-												break;
-											default:
-												break;
-										}
-										try
-										{
-											value = req.GetBodyParam(p.Name);
-											if (p.PropertyType.IsPrimitive)
-											{
-												if (p.PropertyType.Equals(typeof(bool)))
-													p.SetValue(prms, "on".Equals(value));
-												else if (value != null)
-													p.SetValue(prms, Convert.ChangeType(value, p.PropertyType));
-											}
-											else if (p.PropertyType.Equals(typeof(string)))
-											{
-												p.SetValue(prms, value);
-											}
-										}
-										catch (Exception)
-										{
-											success = false;
-										}
-									}
+									clearCache = conf.SetProperties(req.BodyParams, init: false);
+								}
+								catch (Exception e)
+								{
+									logger.LogException(e);
+									success = false;
+								}
+								if (clearCache)
+								{
+									Task.Run(() => {
+										conf.Maintenance = true;
+										cache.Clear();
+										conf.Maintenance = false;
+									});
+									DefaultUnavailable(resp, req, Resources.CACHE_CLEAR_MSG);
+									return;
 								}
 								break;
 							case Method.OPTIONS:
@@ -484,26 +442,18 @@ namespace Tiriryarai.Server
 					DefaultNotFound(resp, req);
 				}}
 			};
-			X509CertificateUrls urls = new X509CertificateUrls(
-				"http://" + Resources.HOSTNAME + "/" + Resources.CA_ISSUER_PATH,
-				"http://" + Resources.HOSTNAME + "/" + Resources.OCSP_PATH,
-				"http://" + Resources.HOSTNAME + "/" + Resources.CRL_PATH
-			);
-			cache = new HttpsMitmProxyCache(
-			    new string[] { Resources.HOSTNAME, prms.Hostname },
-				prms.ConfigDirectory, 500, 60000, urls
-			);
+			cache = HttpsMitmProxyCache.GetSingleton();
 			pluginHosts = new HashSet<string>
 			{
-				prms.Hostname,
-				prms.IP.ToString(),
+				conf.Hostname,
+				conf.IP.ToString(),
 				"localhost",
 				"127.0.0.1"
 			};
 
-			this.prms = prms;
+			this.conf = conf;
 
-			listener = new TcpListener(IPAddress.Any, prms.Port);
+			listener = new TcpListener(IPAddress.Any, conf.Port);
 			listener.Start();
 		}
 
@@ -537,23 +487,30 @@ namespace Tiriryarai.Server
 				if (clientIp == null)
 					throw new NullReferenceException(nameof(clientIp));
 
-				if (cache.GetIPStatistics(clientIp).IsBanned(prms.AllowedLoginAttempts))
+				if (cache.GetIPStatistics(clientIp).IsBanned(conf.AllowedLoginAttempts))
 				{
 					resp = DefaultHttpResponse(403);
 					resp.ToStream(stream);
 					client.Close();
 					return;
 				}
+				else if (conf.Maintenance)
+				{
+					resp = DefaultHttpResponse(503);
+					resp.ToStream(stream);
+					client.Close();
+					return;
+				}
 
-				if (prms.ReadTimeout > 0)
-					stream.ReadTimeout = prms.ReadTimeout;
+				if (conf.ReadTimeout > 0)
+					stream.ReadTimeout = conf.ReadTimeout;
 
 				do // while connection keep-alive
 				{
 					try
 					{
 						if (keepAlive)
-							stream.ReadTimeout = prms.KeepAliveTimeout;
+							stream.ReadTimeout = conf.KeepAliveTimeout;
 
 						req = HttpRequest.FromStream(stream);
 
@@ -580,10 +537,10 @@ namespace Tiriryarai.Server
 
 					if (req.Method == Method.CONNECT)
 					{
-						if (prms.ProxyAuthenticate &&
+						if (conf.ProxyAuthenticate &&
 							!toTiriryarai &&
 							(!req.TryGetBasicAuthentication("Proxy-Authorization", out user, out pass) ||
-							!prms.IsProxyAuthenticated(user, pass)))
+							!conf.IsProxyAuthenticated(user, pass)))
 						{
 							// Don't count login attempts here as it would be really easy to get banned by mistake otherwise
 							resp = DefaultHttpResponse(407, req);
@@ -601,7 +558,7 @@ namespace Tiriryarai.Server
 							resp.ToStream(stream);
 							throw e;
 						}
-						destination = new HttpsClient(hostWithPort, prms.ReadTimeout, true, prms.IgnoreCertificates);
+						destination = new HttpsClient(hostWithPort, conf.ReadTimeout, true, conf.IgnoreCertificates);
 
 						resp = new HttpResponse(200, null, null, "Connection Established");
 						resp.ToStream(stream);
@@ -614,7 +571,7 @@ namespace Tiriryarai.Server
 								try
 								{
 									if (keepAlive)
-										stream.ReadTimeout = prms.KeepAliveTimeout;
+										stream.ReadTimeout = conf.KeepAliveTimeout;
 
 									req = HttpRequest.FromStream(sslStream);
 
@@ -654,17 +611,17 @@ namespace Tiriryarai.Server
 					else
 					{
 						// If a non-CONNECT request is received, it will be proxied directly
-						if (prms.ProxyAuthenticate &&
+						if (conf.ProxyAuthenticate &&
 							!toTiriryarai &&
 							(!req.TryGetBasicAuthentication("Proxy-Authorization", out user, out pass) ||
-							!prms.IsProxyAuthenticated(user, pass)))
+							!conf.IsProxyAuthenticated(user, pass)))
 						{
 							// Don't count login attempts here as it would be really easy to get banned by mistake otherwise
 							resp = DefaultHttpResponse(407, req);
 						}
 						else
 						{
-							destination = new HttpsClient(hostWithPort, prms.ReadTimeout, false, prms.IgnoreCertificates);
+							destination = new HttpsClient(hostWithPort, conf.ReadTimeout, false, conf.IgnoreCertificates);
 							resp = toTiriryarai ?
 								HomePage(req, host, clientIp, tls: false) :
 								HandleRequest(req, destination, tls: false);
@@ -697,11 +654,11 @@ namespace Tiriryarai.Server
 			{
 				Console.WriteLine("\n--------------------\n" +
 							req.Method + (tls ? " https://" : " http://") + destination.HostnameWithPort + req.Path);
-				if (!prms.MitM.Block(destination.Hostname))
+				if (!conf.MitM.Block(destination.Hostname))
 				{
 					logger.Log(3, destination.Hostname, "RECEIVED REQUEST", req);
 
-					http = prms.MitM.HandleRequest(req);
+					http = conf.MitM.HandleRequest(req);
 					if (http is HttpRequest modified)
 					{
 						logger.Log(12, destination.Hostname, "MODIFIED REQUEST", modified);
@@ -724,7 +681,7 @@ namespace Tiriryarai.Server
 
 						logger.Log(3, destination.Hostname, "RECEIVED RESPONSE", resp);
 
-						resp = prms.MitM.HandleResponse(resp, req);
+						resp = conf.MitM.HandleResponse(resp, req);
 						logger.Log(12, destination.Hostname, "MODIFIED RESPONSE", resp);
 					}
 					else if (http is HttpResponse intercepted)
@@ -774,11 +731,11 @@ namespace Tiriryarai.Server
 						// If the client is attempting to access insecurely, redirect to
 						// HTTPS page.
 						resp = DefaultHttpResponse(301, req);
-						resp.SetHeader("Location", prms.HttpsUrl + req.Path);
+						resp.SetHeader("Location", conf.HttpsUrl + req.Path);
 					}
-					else if (prms.Authenticate &&
+					else if (conf.Authenticate &&
 					         (!req.TryGetBasicAuthentication("Authorization", out user, out pass) ||
-					         !prms.IsAuthenticated(user, pass)))
+					         !conf.IsAuthenticated(user, pass)))
 					{
 						cache.GetIPStatistics(client).LoginAttempt();
 						resp = DefaultHttpResponse(401, req);
@@ -787,7 +744,7 @@ namespace Tiriryarai.Server
 					else
 					{
 						cache.GetIPStatistics(client).ResetLoginAttempts();
-						resp = prms.MitM.HomePage(req);
+						resp = conf.MitM.HomePage(req);
 					}
 				}
 				else // Let Tiriryarai handle request
@@ -817,9 +774,9 @@ namespace Tiriryarai.Server
 						resp = DefaultHttpResponse(301, req);
 					}
 					// From here on, only HTTPS is allowed
-					else if (prms.Authenticate &&
+					else if (conf.Authenticate &&
 							 (!req.TryGetBasicAuthentication("Authorization", out user, out pass) ||
-							 !prms.IsAuthenticated(user, pass)))
+							 !conf.IsAuthenticated(user, pass)))
 					{
 						cache.GetIPStatistics(client).LoginAttempt();
 						resp = DefaultHttpResponse(401, req);
@@ -896,6 +853,9 @@ namespace Tiriryarai.Server
 					break;
 				case 502:
 					body = Resources.GATE_PAGE;
+					break;
+				case 503:
+					body = string.Format(Resources.DOWN_PAGE, Resources.CACHE_CLEAR_MSG);
 					break;
 				case 504:
 					body = Resources.GATE_TIMEOUT_PAGE;
@@ -974,6 +934,14 @@ namespace Tiriryarai.Server
 			resp.Status = 500;
 			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(
 				string.Format(Resources.ERR_PAGE, msg)
+			), false, req);
+		}
+
+		private void DefaultUnavailable(HttpResponse resp, HttpRequest req, string msg)
+		{
+			resp.Status = 503;
+			DefaultHttpBody(resp, "text/html", Encoding.Default.GetBytes(
+				string.Format(Resources.DOWN_PAGE, msg)
 			), false, req);
 		}
 	}

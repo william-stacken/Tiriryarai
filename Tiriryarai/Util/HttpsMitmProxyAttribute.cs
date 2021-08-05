@@ -9,35 +9,53 @@ namespace Tiriryarai.Util
 	public enum HttpsMitmProxyProperty
 	{
 		/// <summary>
+		/// The property should be ignored in the configuration interface.
+		/// </summary>
+		None = 0,
+
+		/// <summary>
 		/// The property cannot be updated remotely.
 		/// </summary>
-		Static,
+		Static = 1,
 
 		/// <summary>
 		/// The property can only be updated remotely if
 		/// <see cref="T:Tiriryarai.Util.HttpsMitmProxyConfig.ChangeAuthentication"/>
 		/// is <c>true</c>.
 		/// </summary>
-		Authentication,
+		Authentication = 2,
 
 		/// <summary>
 		/// The property can only be updated remotely if
 		/// <see cref="T:Tiriryarai.Util.HttpsMitmProxyConfig.LogManagement"/>
 		/// is <c>true</c>.
 		/// </summary>
-		Log,
+		Log = 4,
+
+		/// <summary>
+		/// When this property is updated, the <see cref="T:Tiriryarai.Util.HttpsMitmProxyCache"/>
+		/// must be cleared.
+		/// </summary>
+		Cache = 8,
 
 		/// <summary>
 		/// The property can be updated remotely as long as
 		/// <see cref="T:Tiriryarai.Util.HttpsMitmProxyConfig.Configuration"/>
 		/// is <c>true</c>.
 		/// </summary>
-		Standard,
+		Standard = 16,
 
 		/// <summary>
-		/// The property should be ignored in the configuration interface.
+		/// The property is a username and cannot be empty if any password
+		/// are set. Only one property can be of this type.
 		/// </summary>
-		None
+		Username = 32,
+
+		/// <summary>
+		/// The property is a password and cannot be set if there is
+		/// no username property set.
+		/// </summary>
+		Password = 64
 	}
 	/// <summary>
 	/// A class representing an attribute for  properties in the configuration used

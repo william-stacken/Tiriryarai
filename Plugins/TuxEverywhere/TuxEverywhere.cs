@@ -51,8 +51,6 @@ namespace TuxEverywhere
 			"Windows-tan is shit-tier wifu"
 		};
 
-		public void Initialize(string configDir) { }
-
 		public bool Block(string host)
 		{
 			return false;

@@ -149,7 +149,10 @@ namespace Tiriryarai.Util
 
 			public LogStream(Stream stream, byte[] key, bool mode, bool leaveOpen)
 			{
-				this.basestream = stream;
+				if (key != null && key.Length != 16 && key.Length != 24 && key.Length != 32)
+					throw new ArgumentException("Invalid key length: " + key.Length);
+
+				this.basestream = stream ?? throw new ArgumentNullException(nameof(stream));
 				this.key = key != null ? key : new byte[16];
 				this.mode = mode;
 				this.leaveOpen = leaveOpen;
@@ -332,44 +335,14 @@ namespace Tiriryarai.Util
 
 		private static Logger instance = null;
 
+		private HttpsMitmProxyConfig conf;
 		private string logDir = null;
-		private uint verbosity;
-		private int maxLogSize;
-		private byte[] key;
 
-		private Logger() { }
-
-		/// <summary>
-		/// Initialize the logger with a specified log directory and verbosity.
-		/// </summary>
-		/// <param name="logDir">The directory to contain the log files.</param>
-		/// <param name="verbosity">The higher the value, the more objects will be logged.</param>
-		/// <param name="maxLogSize">The largest size allowed for a log in MiB. If a log
-		/// exceeds this size, it is deleted. Zero or negative values are treated as infinite.</param>
-		/// <param name="key">The key that will be used to encypt logs. If null or
-		/// empty, the logs will not be encrypted.</param>
-		public void Initialize(string logDir, uint verbosity, int maxLogSize, byte[] key)
+		private Logger()
 		{
-			if (this.logDir != null)
-				throw new InvalidOperationException("Logger has already been initialized.");
-
-			Key = key;
-
-			this.logDir = logDir ?? throw new ArgumentNullException(nameof(logDir));
-			this.verbosity = verbosity;
-			this.maxLogSize = maxLogSize;
+			conf = HttpsMitmProxyConfig.GetSingleton();
+			logDir = Path.Combine(conf.ConfigDirectory, "logs");
 			Directory.CreateDirectory(logDir);
-		}
-
-		public byte[] Key
-		{
-			set
-			{
-				if (key != null && key.Length != 16 && key.Length != 24 && key.Length != 32)
-					throw new ArgumentException("Invalid key length: " + key.Length);
-
-				key = value;
-			}
 		}
 
 		/// <summary>
@@ -395,7 +368,7 @@ namespace Tiriryarai.Util
 		/// <param name="obj">The object to log.</param>
 		public void Log(uint level, string logname, string head, object obj)
 		{
-			if (level < 1 || verbosity < level)
+			if (level < 1 || conf.LogVerbosity < level)
 				return;
 			ThrowIfInvalid(level, logname, head, obj);
 
@@ -409,18 +382,18 @@ namespace Tiriryarai.Util
 			try
 			{
 				// Delete the log if it has gotten too large
-				if (Exists(logname) && maxLogSize > 0 && LogSize(logname) >> 20 >= maxLogSize)
+				if (Exists(logname) && conf.MaxLogSize > 0 && LogSize(logname) >> 20 >= conf.MaxLogSize)
 					DeleteLog(logname);
 
 				// TODO Is there a need to check what the object is before calling
 				// ToLogEntry
 				if (obj is HttpRequest req)
 				{
-					entry = new LogEntry(head, req, verbosity);
+					entry = new LogEntry(head, req, conf.LogVerbosity);
 				}
 				else if (obj is HttpResponse resp)
 				{
-					entry = new LogEntry(head, resp, verbosity);
+					entry = new LogEntry(head, resp, conf.LogVerbosity);
 				}
 				else
 				{
@@ -433,7 +406,7 @@ namespace Tiriryarai.Util
 					{
 						using (var s = new FileStream(LogPath(logname), FileMode.Append))
 						{
-							using (var entryStream = new LogStream(s, key, mode: false))
+							using (var entryStream = new LogStream(s, conf.PassKey, mode: false))
 							{
 								entryStream.Write(entry);
 								entryStream.Flush();
@@ -469,10 +442,7 @@ namespace Tiriryarai.Util
 		/// <param name="info">Optional information object to log.</param>
 		public void LogException(Exception e, object info)
 		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
-
-			switch (verbosity)
+			switch (conf.LogVerbosity)
 			{
 				case 0:
 				case 1:
@@ -500,9 +470,6 @@ namespace Tiriryarai.Util
 		{
 			get
 			{
-				if (logDir == null)
-					throw new InvalidOperationException(UNINIT_MSG);
-
 				string[] files = Directory.GetFiles(logDir, "*" + LOG_SUFFIX);
 				for (int i = 0; i < files.Length; i++)
 				{
@@ -552,9 +519,6 @@ namespace Tiriryarai.Util
 		{
 			get
 			{
-				if (logDir == null)
-					throw new InvalidOperationException(UNINIT_MSG);
-
 				return Directory.GetLastWriteTime(logDir);
 			}
 		}
@@ -597,7 +561,7 @@ namespace Tiriryarai.Util
 						{
 							using (var s = new FileStream(path, FileMode.Open))
 							{
-								using (var logStream = new LogStream(s, key, mode: true))
+								using (var logStream = new LogStream(s, conf.PassKey, mode: true))
 								{
 									logStream.CopyTo(ms);
 									return ms.ToArray();
@@ -660,10 +624,8 @@ namespace Tiriryarai.Util
 
 		private void ThrowIfInvalid(string logname)
 		{
-			if (logDir == null)
-				throw new InvalidOperationException(UNINIT_MSG);
 			if (logname == null)
-				throw new ArgumentNullException("Arguments may not be null");
+				throw new ArgumentNullException(nameof(logname));
 		}
 
 		private void ThrowIfInvalid(uint level, string logname, string head, object obj)

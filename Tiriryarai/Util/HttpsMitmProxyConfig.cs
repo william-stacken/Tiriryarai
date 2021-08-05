@@ -26,6 +26,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.ComponentModel;
+using System.Reflection;
 
 using Tiriryarai.Server;
 
@@ -38,6 +39,8 @@ namespace Tiriryarai.Util
 	// TODO The properties in this class should be made thread safe
 	class HttpsMitmProxyConfig
 	{
+		private static HttpsMitmProxyConfig singleton;
+
 		private const int AES_BYTES = 32; // AES-256
 		private const int KEY_ITERATIONS = 500;
 		private static readonly byte[] SALT = {
@@ -80,6 +83,8 @@ namespace Tiriryarai.Util
 			}
 			set
 			{
+				if (value.ToLower().Equals(Resources.HOSTNAME.ToLower()))
+					throw new ArgumentException("The hostname may not be \"" + Resources.HOSTNAME + "\".");
 				if (value != null && Uri.CheckHostName(value) == UriHostNameType.Unknown)
 					throw new ArgumentException("Invalid hostname: " + value);
 				host = value;
@@ -106,9 +111,21 @@ namespace Tiriryarai.Util
 			}
 		}
 
+		private bool remoteauth;
+
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Authentication, "checkbox", "a|change-auth")]
+		[Description("Activate admin remote changing of username and admin password. " +
+			"If remote configuration is disabled this property is ignored. <strong>NOTICE:</strong> " +
+			"Once disabled, it cannot be enabled without restarting Tiriryarai.")]
+		public bool ChangeAuthentication
+		{
+			get { return remoteauth; }
+			set { remoteauth = value; LastModifiedTime = DateTime.UtcNow; }
+		}
+
 		private string user;
 
-		[HttpsMitmProxy(HttpsMitmProxyProperty.Authentication, "text", "u|username=")]
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Username | HttpsMitmProxyProperty.Authentication, "text", "u|username=")]
 		[Description("The username required for basic HTTP authentication if one should be required. " +
 			"Used for both proxy authentication and accessing the admin pages. Setting the username without " +
 			" a password has no effect. <strong>NOTICE:</strong> Leaving the username empty will remove the " +
@@ -144,10 +161,13 @@ namespace Tiriryarai.Util
 			}
 		}
 
-		[HttpsMitmProxy(HttpsMitmProxyProperty.Authentication, "password", "w|password=")]
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Password | HttpsMitmProxyProperty.Authentication | HttpsMitmProxyProperty.Cache,
+			"password", "w|password=")]
 		[Description("The password required for accessing the admin pages if one should be required. " +
 			"It will be sent securely using HTTPS only. <strong>NOTICE:</strong> If this password is changed " +
-			"Tiriryarai will be unable to read any existing logs. If that is a concern, please back up the logs first.")]
+			"Tiriryarai will be unable to read any existing logs. If that is a concern, please back up the logs " +
+			"first. Furthermore, if updated at runtime, the cache will be cleared, meaning that you must re-install " +
+			"the root certificate.")]
 		public string Password
 		{
 			set
@@ -160,10 +180,6 @@ namespace Tiriryarai.Util
 
 				passkey = ToPassKey(value);
 				LastModifiedTime = DateTime.UtcNow;
-
-				// Every component dependent on the password must be notified here
-				// TODO Thread safety?
-				Logger.GetSingleton().Key = PassKey;
 			}
 		}
 
@@ -179,7 +195,7 @@ namespace Tiriryarai.Util
 			}
 		}
 
-		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard, "password", "x|proxy-pass=")]
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Password | HttpsMitmProxyProperty.Standard, "password", "x|proxy-pass=")]
 		[Description("The password required for using the proxy if one should be required. " +
 			"It will be sent insecurely using HTTP and <strong>SHOULD NOT</strong> be the same as the admin password.")]
 		public string ProxyPassword
@@ -309,18 +325,6 @@ namespace Tiriryarai.Util
 			set { remoteconf = value; LastModifiedTime = DateTime.UtcNow; OptionLastModifiedTime = DateTime.UtcNow; }
 		}
 
-		private bool remoteauth = true;
-
-		[HttpsMitmProxy(HttpsMitmProxyProperty.Authentication, "checkbox", null)]
-		[Description("Activate admin remote changing of username and admin password. " +
-			"It is true by default, but if remote configuration is disabled this property is unused. " +
-			"<strong>NOTICE:</strong> Once disabled, it cannot be enabled without restarting Tiriryarai.")]
-		public bool ChangeAuthentication
-		{
-			get { return remoteauth; }
-			set { remoteauth = value; LastModifiedTime = DateTime.UtcNow; }
-		}
-
 		private bool certignore;
 		/// <summary>
 		/// Gets or sets a value indicating whether invalid certificates should be ignored
@@ -387,7 +391,7 @@ namespace Tiriryarai.Util
 
 		private int? alivereadtimeout = null;
 
-		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard, "number", "a|alive-timeout=")]
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard, "number", "k|alive-timeout=")]
 		[Description("The time in milliseconds to wait on a client request in a kept-alive connection " +
 			"before terminating it. Negative values and zero are infinite and the default is 1000 ms.")]
 		public int KeepAliveTimeout
@@ -405,6 +409,57 @@ namespace Tiriryarai.Util
 			}
 		}
 
+		private uint? cachemmemlimit;
+
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard | HttpsMitmProxyProperty.Cache,
+			"number", "m|cache-mem=")]
+		[Description("Memory limit imposed on the cache in megabytes. If this limit is breached, cache " +
+			"entries will be expelled. Value must be positive and the default is 200. <strong>NOTICE:</strong> " +
+			"If this property is updated at runtime, the cache will be cleared, meaning that you must re-install " +
+			"the root certificate.")]
+		public uint CacheMemoryLimit
+		{
+			get
+			{
+				if (cachemmemlimit == null)
+					cachemmemlimit = DefaultCacheMemoryLimit;
+				return (uint) cachemmemlimit;
+			}
+			set
+			{
+				cachemmemlimit = value;
+				LastModifiedTime = DateTime.UtcNow;
+			}
+		}
+
+		private uint? cachepoll;
+
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard | HttpsMitmProxyProperty.Cache,
+			"number", "o|cache-poll=")]
+		[Description("The polling interval at which to check that the cache size has not breached the limit in " +
+			"milliseconds. Value must be positive and the default is 30000, or 30 min. <strong>NOTICE:</strong> " +
+			"If this property is updated at runtime, the cache will be cleared, meaning that you must re-install " +
+			"the root certificate.")]
+		public uint CachePollingInterval
+		{
+			get
+			{
+				if (cachepoll == null)
+					cachepoll = DefaultCachePollingInterval;
+				return (uint) cachepoll;
+			}
+			set
+			{
+				cachepoll = value;
+				LastModifiedTime = DateTime.UtcNow;
+			}
+		}
+
+		[HttpsMitmProxy(HttpsMitmProxyProperty.None, null, null)]
+		[Description("A flag indicating that Tiriryarai is undergoing maintenance. This could for " +
+			"example happen due to the cache being cleared or another resource heavy operation.")]
+		public bool Maintenance { get; set; }
+
 		/// <summary>
 		/// Gets the timestamp when Tiriryarai started up.
 		/// </summary>
@@ -421,7 +476,7 @@ namespace Tiriryarai.Util
 		/// Gets the timestamp when one of the admin pages was last disabled
 		/// or enabled.
 		/// </summary>
-		/// <value>The timestamp when configuration was last modified.</value>
+		/// <value>The timestamp when admin page configuration was last modified.</value>
 		public DateTime OptionLastModifiedTime { get; private set; }
 
 		private static IManInTheMiddle DefaultManInTheMiddle
@@ -505,15 +560,32 @@ namespace Tiriryarai.Util
 			get { return 1000; }
 		}
 
+		private static uint DefaultCacheMemoryLimit
+		{
+			get { return 200; }
+		}
+
+		private static uint DefaultCachePollingInterval
+		{
+			get { return 30000; }
+		}
+
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Util.HttpsMitmProxyParams"/> class
 		/// with no authentication required.
 		/// </summary>
-		public HttpsMitmProxyConfig()
+		private HttpsMitmProxyConfig()
 		{
 			StartTime = DateTime.UtcNow;
 			LastModifiedTime = DateTime.UtcNow;
 			OptionLastModifiedTime = DateTime.UtcNow;
+		}
+
+		public static HttpsMitmProxyConfig GetSingleton()
+		{
+			if (singleton == null)
+				singleton = new HttpsMitmProxyConfig();
+			return singleton;
 		}
 
 		/// <summary>
@@ -537,7 +609,7 @@ namespace Tiriryarai.Util
 		/// </summary>
 		/// <returns><c>true</c>, if the username and password was authenticated, <c>false</c> otherwise.</returns>
 		/// <param name="username">The username to check.</param>
-		/// <param name="password">The password to check</param>
+		/// <param name="password">The password to check.</param>
 		public bool IsProxyAuthenticated(string username, string password)
 		{
 			byte[] key;
@@ -546,6 +618,107 @@ namespace Tiriryarai.Util
 			if (username == null || (key = ToPassKey(password)) == null)
 				return false;
 			return username.Equals(Username) && KeysEqual(ProxyPassKey, key);
+		}
+
+		/// <summary>
+		/// Sets properties based on the given dictionary mapping property names to new
+		/// values. This method is atomic, it will either fail by throwing an exception or
+		/// set all recognized properties found in the dictionary.
+		/// </summary>
+		/// <returns><c>true</c>, if a property that requires cache clear was set; otherwise, <c>false</c>.</returns>
+		/// <param name="props">A dictionary of property names mapped to new values
+		/// representing properties that should be updated.</param>
+		/// <param name="init">Boolean indicating whether to allow updating static properties
+		/// that can only be set during initialization of the proxy.</param>
+		public bool SetProperties(Dictionary<string, string> props, bool init)
+		{
+			if (props == null)
+				throw new ArgumentNullException(nameof(props));
+
+			KeyValuePair<PropertyInfo, object>? username = null;
+			List<KeyValuePair<PropertyInfo, object>> passwords = new List<KeyValuePair<PropertyInfo, object>>();
+			List<KeyValuePair<PropertyInfo, object>> commits = new List<KeyValuePair<PropertyInfo, object>>();
+			HttpsMitmProxyProperty type;
+			object value = null;
+			bool cacheClear = false;
+			foreach (var p in GetType().GetProperties())
+			{
+				if (p.GetCustomAttribute(typeof(HttpsMitmProxyAttribute), false) is HttpsMitmProxyAttribute attr &&
+					(type = attr.Type) != HttpsMitmProxyProperty.None &&
+					(init || (type & HttpsMitmProxyProperty.Static) == 0) &&
+					(init || ChangeAuthentication || ((type & HttpsMitmProxyProperty.Authentication) == 0)) &&
+					(init || LogManagement || ((type & HttpsMitmProxyProperty.Log) == 0)) &&
+					p.GetSetMethod() != null)
+				{
+					if ((value = GetValueInDict(p, props)) == null)
+						continue;
+
+					if (((type & HttpsMitmProxyProperty.Cache) != 0) &&
+						!string.IsNullOrWhiteSpace(value.ToString()) &&
+						(p.GetGetMethod() == null || !p.GetValue(this).Equals(value)))
+					{
+						cacheClear = true;
+					}
+
+					if ((type & HttpsMitmProxyProperty.Username) != 0 &&
+						!string.IsNullOrWhiteSpace(value.ToString()))
+					{
+						if (new Regex("[\x00-\x1f\x7f:]").IsMatch(value.ToString()))
+							throw new ArgumentException("Invalid username");
+						username = new KeyValuePair<PropertyInfo, object>(p, value);
+					}
+					else if ((type & HttpsMitmProxyProperty.Password) != 0 &&
+						!string.IsNullOrWhiteSpace(value.ToString()))
+					{
+						if (new Regex("[\x00-\x1f\x7f]").IsMatch(value.ToString()))
+							throw new ArgumentException("Invalid password");
+						passwords.Add(new KeyValuePair<PropertyInfo, object>(p, value));
+					}
+					else
+					{
+						commits.Add(new KeyValuePair<PropertyInfo, object>(p, value));
+					}
+				}
+			}
+			// Validate usernames and passwords and add them to commits
+			if (username != null)
+			{
+				commits.Add((KeyValuePair<PropertyInfo, object>) username);
+				foreach (KeyValuePair<PropertyInfo, object> pass in passwords)
+					commits.Add(pass);
+			}
+			else if (Authenticate || ProxyAuthenticate)
+			{
+				throw new ArgumentException("Cannot remove the username once a password has been set.");
+			}
+			else if (passwords.Count > 0)
+			{
+				throw new ArgumentException("Cannot set a password without setting a username.");
+			}
+
+			// Finally, apply commits
+			foreach (var commit in commits)
+				commit.Key.SetValue(this, commit.Value);
+
+			return cacheClear;
+		}
+
+		private object GetValueInDict(PropertyInfo p, Dictionary<string, string> props)
+		{
+			bool exists = props.TryGetValue(p.Name.ToLower(), out string rawValue);
+			Type t = p.PropertyType;
+			if (t.IsPrimitive)
+			{
+				if (t.Equals(typeof(bool)))
+					return exists;
+				else if (exists && rawValue != null)
+					return Convert.ChangeType(rawValue, p.PropertyType);
+			}
+			else if (t.Equals(typeof(string)))
+			{
+				return rawValue;
+			}
+			return null;
 		}
 
 		private byte[] ToPassKey(string pass)

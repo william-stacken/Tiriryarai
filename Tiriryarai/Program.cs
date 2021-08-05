@@ -44,46 +44,39 @@ namespace TiriryaraiMitm
 			bool version = false;
 			HttpsMitmProxy proxy = null;
 			List<string> extraOpts = null;
+			Dictionary<string, string> props = new Dictionary<string, string>();
 			try
 			{
-				HttpsMitmProxyConfig prms = new HttpsMitmProxyConfig();
+				HttpsMitmProxyConfig conf = HttpsMitmProxyConfig.GetSingleton();
 				OptionSet opts = new OptionSet
 				{
-					{ "h|help",  "Show help", _ => help = true },
-					{ "version",  "Show version and about info", _ => version = true }
+					{ "h|help",  "Show help.", _ => help = true },
+					{ "version",  "Show version and about info.", _ => version = true }
 				};
-
-				foreach (var p in prms.GetType().GetProperties())
-				{
-					string cli;
-					if (p.GetCustomAttribute(typeof(HttpsMitmProxyAttribute), false) is HttpsMitmProxyAttribute attr &&
-						(cli = attr.CliPrototype) != null)
-					{
-						string description = (p.GetCustomAttribute(typeof(DescriptionAttribute), false)
-							as DescriptionAttribute)?.Description;
-
-						opts.Add(cli, description ?? "<no description>", v => {
-							if (p.PropertyType.IsPrimitive)
-							{
-								if (p.PropertyType.Equals(typeof(bool)))
-									p.SetValue(prms, true);
-								else
-									p.SetValue(prms, Convert.ChangeType(v, p.PropertyType));
-							}
-							else
-							{
-								p.SetValue(prms, v);
-							}
-						});
-					}
-				}
 
 				try
 				{
+					foreach (var p in conf.GetType().GetProperties())
+					{
+						string cli;
+						if (p.GetCustomAttribute(typeof(HttpsMitmProxyAttribute), false) is HttpsMitmProxyAttribute attr &&
+							(cli = attr.CliPrototype) != null)
+						{
+							string description = (p.GetCustomAttribute(typeof(DescriptionAttribute), false)
+								as DescriptionAttribute)?.Description;
+
+							opts.Add(cli, description ?? "<no description>", v => {
+								props.Add(p.Name.ToLower(), v);
+							});
+						}
+					}
 					extraOpts = opts.Parse(args);
+					conf.SetProperties(props, init: true); // Ignore return value
 				}
-				catch (OptionException e)
+				catch (Exception e)
 				{
+					if (e is TargetInvocationException t)
+						e = t.InnerException;
 					Console.WriteLine(e.Message);
 					help = true;
 				}
@@ -104,7 +97,7 @@ namespace TiriryaraiMitm
 				}
 
 				PrintStartup();
-				if (!prms.Authenticate)
+				if (!conf.Authenticate)
 				{
 					Console.WriteLine("NOTICE: Authentication for accessing admin pages is disabled.");
 					Console.WriteLine("Hosting Tiriryarai on the public internet or an untrusted network is strongly discouraged.");
@@ -112,17 +105,21 @@ namespace TiriryaraiMitm
 					Console.WriteLine();
 				}
 				Console.Write("Starting server and generating certificates... ");
-				proxy = new HttpsMitmProxy(prms);
+
+				proxy = new HttpsMitmProxy(conf);
+
 				Console.WriteLine("Done");
 				Console.WriteLine();
-
 				Console.WriteLine("Tiriryarai has started!");
-				Console.WriteLine("Configure your client to use host " + prms.Hostname + " and port " + prms.Port + " as a HTTP proxy.");
+				Console.WriteLine("Configure your client to use host " + conf.Hostname + " and port " + conf.Port + " as a HTTP proxy.");
 				Console.WriteLine("Then open http://" + Resources.HOSTNAME + " for more information.");
 			}
 			catch (Exception e)
 			{
-				Console.WriteLine("\nFailed to initialize server:\n" + e);
+				if (e is TargetInvocationException t)
+					e = t.InnerException;
+				Console.WriteLine("\nFailed to initialize server:");
+				Console.WriteLine(e.Message);
 				Environment.Exit(-2);
 			}
 			proxy.Start();

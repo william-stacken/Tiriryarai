@@ -23,17 +23,11 @@ namespace Tiriryarai.Server
 {
 	/// <summary>
 	/// An interface for a man-in-the-middle handler that will receive incomming HTTP requests and outgoing HTTP responses
-	/// to tamper with them automatically.
+	/// to tamper with them automatically. Classes implementing this interface MUST have a constructor that does not
+	/// have any arguments.
 	/// </summary>
 	interface IManInTheMiddle
 	{
-		/// <summary>
-		/// Initializes the man-in-the-middle handler with a path to a directory where it may store custom
-		/// configuration. This is called directly after the constructor.
-		/// </summary>
-		/// <param name="hostname">The path to the configuration directory.</param>
-		void Initialize(string configDir);
-
 		/// <summary>
 		/// Returns a <c>bool</c> indicating whether the given host is blocked.
 		/// </summary>

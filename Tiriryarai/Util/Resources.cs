@@ -49,7 +49,7 @@ namespace Tiriryarai.Util
 			"C=Tiriryarai, O=Tiriryarai, OU=Tiriryarai CA, CN={0}";
 		public static readonly string HASH_ALGORITHM = "SHA256";
 		public static readonly int KEY_BITS = 2048;
-		public static readonly string PFX_PASS = "secret";
+		public static readonly string HARDCODED_PFX_PASS = "secret";
 		public static readonly byte[] CA_KEY_ID =
 		{
 			20, 65, 172, 5, 201, 49, 53, 97, 34, 122, 109, 32, 73, 230, 85, 169, 140, 11, 24, 158
@@ -147,6 +147,11 @@ namespace Tiriryarai.Util
 			"<p>The requested host sent an illegitimate response.</p>"
 		);
 
+		public static string DOWN_PAGE = string.Format(TEMPLATE_PAGE,
+			"<h1>503 Service Unavailable</h1>" +
+			"<p>{0}</p>"
+		);
+
 		public static string GATE_TIMEOUT_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>504 Gateway Timeout</h1>" +
 			"<a href=\"https://" + HOSTNAME + "\"><img src=\"https://" + HOSTNAME + "/favicon.ico\" alt=\"logo\"/></a>" +
@@ -163,6 +168,11 @@ namespace Tiriryarai.Util
 			"that Tiriryarai does not have the correct password required to decrypt it. " +
 			"You can attempt to change the configured password and try to view the log again. " +
 			"Otherwise you must delete it as there is no other way to recover it.";
+
+		public static string CACHE_CLEAR_MSG =
+			"Tiriryarai is currently undergoing maintenance to clear the internal cache. " +
+			"Please wait for (hopefully) a few seconds, then go to the <a href=\"http://" +
+			Resources.HOSTNAME + "\">welcome page</a> and install the new CA certificate.";
 
 		public static string LOG_PAGE = string.Format(TEMPLATE_PAGE,
 			"<h1>Log Management</h1>" +
@@ -218,7 +228,7 @@ namespace Tiriryarai.Util
 		);
 
 		public static string CONFIG_ENTRY =
-			"<tr style=\"padding:10px\">" +
+			"<tr>" +
 			  "<td><label for=\"{0}\">{1}</label></td>" +
 			  "<td><input type=\"{2}\" id=\"{0}\" name=\"{0}\" {3}></td>" +
 			  "<td>{4}</td>" +

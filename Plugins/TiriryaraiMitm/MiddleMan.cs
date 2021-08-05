@@ -30,18 +30,19 @@ namespace TiriryaraiMitm
 	{
 		private bool intercept;
 		private Logger logger;
+		private HttpsMitmProxyConfig conf;
 
 		public MiddleMan()
 		{
 			intercept = false;
 			logger = Logger.GetSingleton();
-		}
+			conf = HttpsMitmProxyConfig.GetSingleton();
 
-		public void Initialize(string configDir)
-		{
 			// An example of what could be done here is to create an ini
-			// file in the directory if it doesn't exist, or read
-			// configuration from it if it does exist.
+			// file in the directory specified by conf.ConfigDirectory
+			// if it doesn't exist, or read configuration from it if it
+			// does exist. The configuration file could be encrypted using
+			// conf.PassKey.
 		}
 
 		public bool Block(string hostname)
@@ -67,7 +68,9 @@ namespace TiriryaraiMitm
 			}
 
 			// Replace the connection header and remove all headers in its header
-			// fields in accordance to rfc7230 section 6.1
+			// fields in accordance to rfc7230 section 6.1. Tiriryarai does not
+			// follow rfc proxy conventions fully to allow plugins the freedom to
+			// choose whether or not to follow them.
 			string[] connection = req.GetHeader("Connection");
 			if (connection != null)
 			{

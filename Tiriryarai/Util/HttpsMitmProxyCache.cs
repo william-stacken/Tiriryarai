@@ -44,60 +44,82 @@ namespace Tiriryarai.Util
 	/// man-in-the-middle HTTPS proxies. The content will be cached and removed automatically
 	/// when expired. The cache is self-mantaining in that it shrinks itself if it
 	/// gets too large. The root CA and OCSP CA certificates will be stored on disk instead
-	/// of in memory however since they are unlikely to change when restarting Tiriryarai.
+	/// of in memory however since they can be reused when restarting Tiriryarai.
 	/// </summary>
 	public class HttpsMitmProxyCache
 	{
-		private static readonly Random rng = new Random();
-
-		private Logger logger;
-		private MemoryCache cache;
-		private readonly string[] mitmHosts;
-
-		private readonly string storeDir;
 		private static readonly string rootCA = "-RootCA-.pfx";
 		private static readonly string ocspCA = "-OcspCA-.pfx";
-		private readonly X509CertificateUrls urls;
+
+		private static HttpsMitmProxyCache singleton;
+		private static readonly Random rng = new Random();
+
+		private HttpsMitmProxyConfig conf;
+		private Logger logger;
+		private MemoryCache cache;
+
+		private string[] mitmHosts;
+		private X509CertificateUrls urls;
 
 		private ConcurrentDictionary<object, byte> mutex;
 
-		/// <summary>
-		/// Initializes a new instance of the <see cref="T:Tiriryarai.Util.HttpsMitmProxyCache"/> class.
-		/// </summary>
-		/// <param name="mitmHosts">Hostnames of the MitM proxy.</param>
-		/// <param name="storeDir">Path to directory where the PKCS12 files will be stored.</param>
-		/// <param name="mbMemoryLimit">Memory limit imposed on the cache in megabytes. If this limit
-		/// is breached, cache entries will be expelled.</param>
-		/// <param name="pollingInterval">The polling interval at which to check that the cache size
-		/// has not breached the limit.</param>
-		/// <param name="urls">An immutable collection of URLs used when generating certificates.</param>
-		public HttpsMitmProxyCache(string[] mitmHosts, string storeDir, int mbMemoryLimit, int pollingInterval, X509CertificateUrls urls)
+		private HttpsMitmProxyCache()
 		{
-			this.storeDir = storeDir ?? throw new ArgumentNullException(nameof(storeDir));
-			this.urls = urls ?? throw new ArgumentNullException(nameof(urls));
-			this.mitmHosts = mitmHosts ?? throw new ArgumentNullException(nameof(mitmHosts));
-
+			conf = HttpsMitmProxyConfig.GetSingleton();
 			logger = Logger.GetSingleton();
-
+			mitmHosts = new string[] { Resources.HOSTNAME, conf.Hostname };
 			mutex = new ConcurrentDictionary<object, byte>();
+
+			urls = new X509CertificateUrls(
+				"http://" + Resources.HOSTNAME + "/" + Resources.CA_ISSUER_PATH,
+				"http://" + Resources.HOSTNAME + "/" + Resources.OCSP_PATH,
+				"http://" + Resources.HOSTNAME + "/" + Resources.CRL_PATH
+			);
+			Initialize();
+		}
+
+		public static HttpsMitmProxyCache GetSingleton()
+		{
+			if (singleton == null)
+				singleton = new HttpsMitmProxyCache();
+			return singleton;
+		}
+
+		/// <summary>
+		/// Clears the entire cache, including the PKCS12 files stored on disk.
+		/// This means that a new Root CA is generated that must be installed in
+		/// clients.
+		/// </summary>
+		public void Clear()
+		{
+			// Remove all PKCS12 files
+			foreach (string pfxFile in Directory.GetFiles(conf.ConfigDirectory, "*.pfx"))
+				File.Delete(pfxFile);
+
+			cache.Dispose();
+			Initialize();
+		}
+
+		private void Initialize()
+		{
 			cache = new MemoryCache("HttpsMitmProxyCache", new NameValueCollection {
-				{"CacheMemoryLimitMegabytes", "" + mbMemoryLimit}, // TODO add to proxy config
-				{"PollingInterval", TimeSpan.FromMilliseconds(pollingInterval).ToString()},
+				{"CacheMemoryLimitMegabytes", "" + conf.CacheMemoryLimit},
+				{"PollingInterval", TimeSpan.FromMilliseconds(conf.CachePollingInterval).ToString()},
 			});
 
-			InitializePKCS12(rootCA, Path.Combine(storeDir, rootCA), CreateRootCertFile, GetRootCA);
-			InitializePKCS12(ocspCA, Path.Combine(storeDir, ocspCA), CreateOCSPCertFile, GetOCSPCA);
+			InitializePKCS12(rootCA, Path.Combine(conf.ConfigDirectory, rootCA), CreateRootCertFile, GetRootCA);
+			InitializePKCS12(ocspCA, Path.Combine(conf.ConfigDirectory, ocspCA), CreateOCSPCertFile, GetOCSPCA);
 
 			foreach (string mitmHost in mitmHosts)
 			{
 				InitializePKCS12(mitmHost,
-				                 Path.Combine(storeDir, mitmHost + ".pfx"),
+				                 Path.Combine(conf.ConfigDirectory, mitmHost + ".pfx"),
 				                 CreateCertificate,
 				                 () => GetCertificate(mitmHost));
 			}
 
 			// Remove PKCS12 files that are no longer in use
-			foreach (string pfxFile in Directory.GetFiles(storeDir, "*.pfx"))
+			foreach (string pfxFile in Directory.GetFiles(conf.ConfigDirectory, "*.pfx"))
 			{
 				bool isUnused = true;
 				string name = Path.GetFileNameWithoutExtension(pfxFile);
@@ -125,7 +147,21 @@ namespace Tiriryarai.Util
 			else
 			{
 				collection = new X509Certificate2Collection();
-				collection.Import(filepath, Resources.PFX_PASS, X509KeyStorageFlags.PersistKeySet);
+				try
+				{
+					collection.Import(
+						filepath,
+						conf.Authenticate ? Convert.ToBase64String(conf.PassKey) : Resources.HARDCODED_PFX_PASS,
+						X509KeyStorageFlags.PersistKeySet
+					);
+				}
+				catch (CryptographicException)
+				{
+					throw new CryptographicException(
+						"The PKCS12 file at " + filepath + " could not be opened, which is likely due " +
+						"to Tiriryarai not knowing the password. The configured password should be updated " +
+						"or the PKCS12 file should be deleted.");
+				}
 				X509Certificate2 cert = collection[0];
 				if (cert.NotAfter < DateTime.UtcNow)
 				{
@@ -140,7 +176,7 @@ namespace Tiriryarai.Util
 			object val = null;
 
 			while (!mutex.TryAdd(key, 0))
-				Thread.Sleep(200);
+				Thread.Sleep(100);
 
 			try
 			{
@@ -265,18 +301,20 @@ namespace Tiriryarai.Util
 		/// <param name="req">The IP whose client statistics to obtain.</param>
 		public IpClientStats GetIPStatistics(IPAddress ip)
 		{
+			if (ip == null)
+				throw new ArgumentNullException(nameof(ip));
 			// TODO Expire statistics after 14 days, maybe there is a better time frame?
 			return AddOrGetExisting("$" + ip, val => new IpClientStats(), val => DateTime.UtcNow.AddDays(14)
 			) as IpClientStats;
 		}
 
-		private static PKCS12 SaveToPKCS12(string path,
+		private PKCS12 SaveToPKCS12(string path,
 		                                   X509CertificateBuilder cb,
 		                                   AsymmetricAlgorithm subjectKey,
 		                                   AsymmetricAlgorithm issuerKey)
 		{
 			PKCS12 p12 = new PKCS12();
-			p12.Password = Resources.PFX_PASS;
+			p12.Password = conf.Authenticate ? Convert.ToBase64String(conf.PassKey) : Resources.HARDCODED_PFX_PASS;
 
 			ArrayList list = new ArrayList();
 			list.Add(new byte[4] { 1, 0, 0, 0 });
@@ -326,8 +364,12 @@ namespace Tiriryarai.Util
 			cb.Extensions.Add(skie);
 			cb.Extensions.Add(akie);
 
-			PKCS12 p12 = SaveToPKCS12(Path.Combine(storeDir, rootCA), cb, rootKey, rootKey);
-			return new X509Certificate2(p12.GetBytes(), Resources.PFX_PASS, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
+			PKCS12 p12 = SaveToPKCS12(Path.Combine(conf.ConfigDirectory, rootCA), cb, rootKey, rootKey);
+			return new X509Certificate2(
+				p12.GetBytes(),
+				conf.Authenticate ? Convert.ToBase64String(conf.PassKey) : Resources.HARDCODED_PFX_PASS,
+				X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet
+			);
 		}
 
 		private X509Certificate2 CreateOCSPCertFile(object cert)
@@ -371,10 +413,10 @@ namespace Tiriryarai.Util
 			cb.Extensions.Add(skie);
 			cb.Extensions.Add(akie);
 
-			PKCS12 p12 = SaveToPKCS12(Path.Combine(storeDir, ocspCA), cb, ocspKey, GetRootCA().PrivateKey);
+			PKCS12 p12 = SaveToPKCS12(Path.Combine(conf.ConfigDirectory, ocspCA), cb, ocspKey, GetRootCA().PrivateKey);
 			return new X509Certificate2(
 				p12.GetBytes(),
-				Resources.PFX_PASS, 
+				conf.Authenticate ? Convert.ToBase64String(conf.PassKey) : Resources.HARDCODED_PFX_PASS,
 				X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet
 			);
 		}
@@ -443,7 +485,7 @@ namespace Tiriryarai.Util
 			cb.Extensions.Add(aiae);
 
 			PKCS12 p12 = new PKCS12();
-			p12.Password = Resources.PFX_PASS;
+			p12.Password = conf.Authenticate ? Convert.ToBase64String(conf.PassKey) : Resources.HARDCODED_PFX_PASS;
 
 			ArrayList list = new ArrayList();
 			list.Add(new byte[4] { 1, 0, 0, 0 });
@@ -457,12 +499,12 @@ namespace Tiriryarai.Util
 			foreach (string mitmHost in mitmHosts)
 			{
 				if (hostname.Equals(mitmHost))
-					p12.SaveToFile(Path.Combine(storeDir, mitmHost + ".pfx"));
+					p12.SaveToFile(Path.Combine(conf.ConfigDirectory, mitmHost + ".pfx"));
 			}
 
 			return new X509Certificate2(
 				p12.GetBytes(),
-				Resources.PFX_PASS,
+				conf.Authenticate ? Convert.ToBase64String(conf.PassKey) : Resources.HARDCODED_PFX_PASS,
 				X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet
 			);
 		}

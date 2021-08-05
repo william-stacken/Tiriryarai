@@ -178,7 +178,7 @@ namespace Tiriryarai.Crypto
 						if (single.NextUpdate < earliestExpiry)
 							earliestExpiry = single.NextUpdate;
 					}
-					return earliestExpiry < DateTime.MinValue ? earliestExpiry : null;
+					return earliestExpiry < DateTime.MaxValue ? earliestExpiry : null;
 				}
 				else
 				{

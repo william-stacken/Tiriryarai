@@ -511,6 +511,19 @@ namespace Tiriryarai.Http
 		}
 
 		/// <summary>
+		/// Treats the entity body as a form-encoded string and retrives it as
+		/// a dictionary of keys mapped to values.
+		/// </summary>
+		/// <returns>The value of the parameter if it exists; otherwise, <c>null</c>.</returns>
+		public Dictionary<string, string> BodyParams
+		{
+			get
+			{
+				return ParseUrlEncoded(Encoding.Default.GetString(DecodedBody));
+			}
+		}
+
+		/// <summary>
 		/// Treats the entity body as a form-encoded string and retrives the URL decoded
 		/// value of a given parameter.
 		/// </summary>
@@ -518,13 +531,12 @@ namespace Tiriryarai.Http
 		/// <param name="param">The parameter to retrieve.</param>
 		public string GetBodyParam(string param)
 		{
-			return ExtractUrlEncodedParam(Encoding.Default.GetString(DecodedBody), param);
+			return BodyParams.TryGetValue(param.ToLower(), out string value) ? value : null;
 		}
 
-		protected string ExtractUrlEncodedParam(string urlEncoded, string param)
+		protected Dictionary<string, string> ParseUrlEncoded(string urlEncoded)
 		{
-			int i;
-			string lower = param.ToLower();
+			Dictionary<string, string> formBody = new Dictionary<string, string>();
 			string[] keyVals = urlEncoded.Split('&');
 			foreach (string keyVal in keyVals)
 			{
@@ -532,8 +544,12 @@ namespace Tiriryarai.Http
 					continue;
 				string key;
 				string val;
-				i = keyVal.IndexOf('=');
-				if (i >= 0)
+				int i = keyVal.IndexOf('=');
+				if (i == 0)
+				{
+					continue;
+				}
+				else if (i > 0)
 				{
 					key = keyVal.Substring(0, i).ToLower();
 					val = keyVal.Substring(i + 1);
@@ -543,12 +559,9 @@ namespace Tiriryarai.Http
 					key = keyVal.ToLower();
 					val = "";
 				}
-				if (key.Equals(lower))
-				{
-					return HttpUtility.UrlDecode(val);
-				}
+				formBody.Add(key, val);
 			}
-			return null;
+			return formBody;
 		}
 
 		/// <summary>
