@@ -204,7 +204,7 @@ namespace Tiriryarai.Util
 			return AddOrGetExisting(rootCA, certPath => {
 				if (!(certPath is string path))
 					throw new ArgumentException("certPath must be a string");
-				Console.WriteLine("\n--------------------\nNOTICE: The root CA certificate has expired and will be replaced." +
+				logger.LogDebug(1, "NOTICE: The root CA certificate has expired and will be replaced." +
 							"Please install the new certificate and remove the old one.");
 				// TODO Clear the cache somehow since essentially everything in the cache is now invalid.
 				File.Delete(path);
@@ -558,7 +558,8 @@ namespace Tiriryarai.Util
 			}
 			catch (Exception e)
 			{
-				logger.LogException(e, certId);
+				logger.LogDebug(10, e);
+				logger.LogDebug(10, certId);
 				ocsp = new X509OCSPResponse(X509OCSPResponse.ResponseStatus.MalformedRequest);
 			}
 			return new X509OCSPResponse(ocsp.Sign(ca));

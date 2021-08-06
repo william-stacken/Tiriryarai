@@ -185,7 +185,14 @@ namespace Tiriryarai.Util
 				"<th><strong>Actions</strong></th>" +
 			  "</tr>" +
 			  "{0}" +
-			"</table>"
+			"</table>" +
+			"<div style=\"margin-top:30px\">" +
+			  "<form method=\"post\" action=\"/logs\">" +
+			    "<input type=\"submit\" name=\"deleteall\" value=\"Delete All\"/>" +
+				"<input style=\"margin-left:50px\" type=\"checkbox\" name=\"sure\" id=\"sure\"/>" +
+			    "<label for=\"sure\">I am sure</label>" +
+			  "</form>" +
+			"</div>"
 		);
 
 		public static string LOG_ENTRY =
@@ -209,10 +216,10 @@ namespace Tiriryarai.Util
 			  "be reset to their default value. Note that when the form is submitted, invalid " +
 			  "fields will be ignored, but valid fields will still update the configuration." +
 			"</p>" +
-			"<p style=\"color:red\">" +
+			"<p><strong>" +
 			  "Much of the configuration CANNOT be reverted once updated. Please read through the " +
 			  "information carefully before making changes and make sure you know what you are doing." +
-			"</p>" +
+			"</strong></p>" +
 			"<form method=\"post\" action=\"/config\">" +
 			  "<table style=\"width:100%\">" +
 				"<tr>" +

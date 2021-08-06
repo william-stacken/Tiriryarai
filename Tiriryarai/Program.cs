@@ -45,6 +45,7 @@ namespace TiriryaraiMitm
 			HttpsMitmProxy proxy = null;
 			List<string> extraOpts = null;
 			Dictionary<string, string> props = new Dictionary<string, string>();
+			Logger logger = Logger.GetSingleton();
 			try
 			{
 				HttpsMitmProxyConfig conf = HttpsMitmProxyConfig.GetSingleton();
@@ -96,34 +97,33 @@ namespace TiriryaraiMitm
 					Environment.Exit(-1);
 				}
 
-				PrintStartup();
+				if (!conf.DisableStdout)
+					PrintStartup();
 				if (!conf.Authenticate)
 				{
-					Console.WriteLine("NOTICE: Authentication for accessing admin pages is disabled.");
-					Console.WriteLine("Hosting Tiriryarai on the public internet or an untrusted network is strongly discouraged.");
-					Console.WriteLine("If this was unintentional, see the help by using the \"-h\" flag.");
-					Console.WriteLine();
+					logger.WriteStdout("NOTICE: Authentication for accessing admin pages is disabled.");
+					logger.WriteStdout("Hosting Tiriryarai on the public internet or an untrusted network is strongly discouraged.");
+					logger.WriteStdout("If this was unintentional, see the help by using the \"-h\" flag.\n");
 				}
-				Console.Write("Starting server and generating certificates... ");
+				logger.WriteStdout("Starting server and generating certificates... ");
 
 				proxy = new HttpsMitmProxy(conf);
 
-				Console.WriteLine("Done");
-				Console.WriteLine();
-				Console.WriteLine("Tiriryarai has started!");
-				Console.WriteLine("Configure your client to use host " + conf.Hostname + " and port " + conf.Port + " as a HTTP proxy.");
-				Console.WriteLine("Then open http://" + Resources.HOSTNAME + " for more information.");
+				logger.WriteStdout("Done\n");
+				logger.WriteStdout("Tiriryarai has started!");
+				logger.WriteStdout("Configure your client to use host " + conf.Hostname + " and port " + conf.Port + " as a HTTP proxy.");
+				logger.WriteStdout("Then open http://" + Resources.HOSTNAME + " for more information.");
 			}
 			catch (Exception e)
 			{
 				if (e is TargetInvocationException t)
 					e = t.InnerException;
-				Console.WriteLine("\nFailed to initialize server:");
-				Console.WriteLine(e.Message);
+				logger.WriteStdout("Failed to initialize server:");
+				logger.WriteStdout(e.Message);
 				Environment.Exit(-2);
 			}
 			proxy.Start();
-			Console.WriteLine("Tiriryarai shut down...");
+			logger.WriteStdout("Tiriryarai shut down...");
 		}
 
 		private static void PrintStartup()

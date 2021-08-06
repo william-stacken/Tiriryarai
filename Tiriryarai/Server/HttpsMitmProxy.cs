@@ -107,6 +107,11 @@ namespace Tiriryarai.Server
 					}
 				}},
 				{"favicon.ico", (req, resp) => {
+					if (!string.Empty.Equals(req.SubPath(1)))
+					{
+						DefaultNotFound(resp, req);
+						return;
+					}
 					switch (req.Method)
 					{
 						case Method.HEAD:
@@ -129,6 +134,11 @@ namespace Tiriryarai.Server
 					logger.Log(15, req.Host, "OUTGOING INTERNAL RESPONSE", resp);
 				}},
 				{"cert", (req, resp) => {
+					if (!string.Empty.Equals(req.SubPath(1)))
+					{
+						DefaultNotFound(resp, req);
+						return;
+					}
 					switch (req.Method)
 					{
 						case Method.HEAD:
@@ -154,6 +164,11 @@ namespace Tiriryarai.Server
 				}},
 				{Resources.CA_ISSUER_PATH, (req, resp) =>
 				{
+					if (!string.Empty.Equals(req.SubPath(1)))
+					{
+						DefaultNotFound(resp, req);
+						return;
+					}
 					logger.Log(8, req.Host, "INCOMMING ISSUER REQUEST", req);
 					switch (req.Method)
 					{
@@ -179,6 +194,11 @@ namespace Tiriryarai.Server
 				}},
 				{Resources.OCSP_PATH, (req, resp) =>
 				{
+					if (!string.Empty.Equals(req.SubPath(1)))
+					{
+						DefaultNotFound(resp, req);
+						return;
+					}
 					logger.Log(8, req.Host, "INCOMMING OCSP REQUEST", req);
 					switch (req.Method)
 					{
@@ -196,7 +216,8 @@ namespace Tiriryarai.Server
 							}
 							catch (Exception e)
 							{
-								logger.LogException(e, req);
+								logger.LogDebug(10, e);
+								logger.LogDebug(10, req);
 							}
 							X509OCSPResponse ocspResp = ocspReq != null ?
 							    cache.GetOCSPResponse(ocspReq) :
@@ -223,6 +244,11 @@ namespace Tiriryarai.Server
 				}},
 				{Resources.CRL_PATH, (req, resp) =>
 				{
+					if (!string.Empty.Equals(req.SubPath(1)))
+					{
+						DefaultNotFound(resp, req);
+						return;
+					}
 					logger.Log(8, req.Host, "INCOMMING CRL REQUEST", req);
 					switch (req.Method)
 					{
@@ -255,7 +281,7 @@ namespace Tiriryarai.Server
 						DateTime? ifModified = req.GetDateHeader("If-Modified-Since");
 						string logFile = req.SubPath(1);
 
-						if ("".Equals(logFile))
+						if (string.Empty.Equals(logFile))
 						{
 							// Request to log directory
 							switch (req.Method)
@@ -281,15 +307,35 @@ namespace Tiriryarai.Server
 										string.Format(Resources.LOG_PAGE, entryBuilder)
 									), false, req);
 									return;
+								case Method.POST:
+									if (!"application/x-www-form-urlencoded".Equals(req.ContentTypeWithoutCharset))
+									{
+										DefaultBadMediaType(resp, req);
+										return;
+									}
+									else if ("on".Equals(req.GetBodyParam("sure")) && "Delete All".Equals(req.GetBodyParam("deleteall")))
+									{
+										foreach (string log in logger.LogNames)
+											logger.DeleteLog(log);
+									}
+									break;
+								case Method.DELETE:
+									foreach (string log in logger.LogNames)
+										logger.DeleteLog(log);
+									break;
 								case Method.OPTIONS:
-									DefaultOptions(resp, req);
+									DefaultOptions(resp, req, Method.POST, Method.DELETE);
 									return;
 								default:
 									DefaultUnsupported(resp, req);
 									return;
 							}
+							resp.Status = 303;
+							resp.SetHeader("Location", "/logs");
+							resp.ContentLength = 0;
+							return;
 						}
-						else if (logger.Exists(logFile) && "".Equals(req.SubPath(2))) // Only one path level allowed
+						else if (logger.Exists(logFile) && string.Empty.Equals(req.SubPath(2))) // Only one path level allowed
 						{
 							switch (req.Method)
 							{
@@ -339,7 +385,7 @@ namespace Tiriryarai.Server
 					DefaultNotFound(resp, req);
 				}},
 				{"config", (req, resp) => {
-					if (conf.Configuration)
+					if (conf.Configuration && string.Empty.Equals(req.SubPath(1)))
 					{
 						logger.Log(8, req.Host, "INCOMMING CONFIG REQUEST", req);
 						string value, description;
@@ -413,7 +459,7 @@ namespace Tiriryarai.Server
 								}
 								catch (Exception e)
 								{
-									logger.LogException(e);
+									logger.LogDebug(5, e);
 									success = false;
 								}
 								if (clearCache)
@@ -521,14 +567,6 @@ namespace Tiriryarai.Server
 					}
 					catch (Exception e)
 					{
-						if (e is IOException ||
-						    e is ObjectDisposedException ||
-							e.InnerException is IOException)
-						{
-							// Connection has become inactive or was closed by the remote
-							keepAlive = false;
-							break;
-						}
 						resp = DefaultHttpResponse(400);
 						resp.ToStream(stream);
 						throw e;
@@ -582,14 +620,17 @@ namespace Tiriryarai.Server
 								catch (Exception e)
 								{
 									if (e is IOException ||
+										e is SocketException ||
 									    e is ObjectDisposedException ||
-									    e.InnerException is IOException)
+									    e.InnerException is IOException ||
+										e is AggregateException)
 									{
 										// Connection has become inactive or was closed by the remote
+										logger.LogDebug(12, e);
 										keepAlive = false;
 										break;
 									}
-									logger.LogException(e);
+									logger.LogDebug(8, e);
 									resp = DefaultHttpResponse(400);
 								}
 								resp.ToStream(sslStream);
@@ -599,7 +640,7 @@ namespace Tiriryarai.Server
 						}
 						catch (Exception e)
 						{
-							logger.LogException(e);
+							logger.LogDebug(13, e);
 						}
 						finally
 						{
@@ -638,7 +679,18 @@ namespace Tiriryarai.Server
 			}
 			catch (Exception e)
 			{
-				logger.LogException(e);
+				if (e is IOException ||
+					e is SocketException ||
+					e is ObjectDisposedException ||
+					e.InnerException is IOException)
+				{
+					// Connection was probably closed by the remote
+					logger.LogDebug(15, e);
+				}
+				else
+				{
+					logger.LogDebug(8, e);
+				}
 			}
 			finally
 			{
@@ -652,8 +704,8 @@ namespace Tiriryarai.Server
 			HttpMessage http;
 			try
 			{
-				Console.WriteLine("\n--------------------\n" +
-							req.Method + (tls ? " https://" : " http://") + destination.HostnameWithPort + req.Path);
+				logger.WriteStdout("\n--------------------\n" +
+					req.Method + (tls ? " https://" : " http://") + destination.HostnameWithPort);
 				if (!conf.MitM.Block(destination.Hostname))
 				{
 					logger.Log(3, destination.Hostname, "RECEIVED REQUEST", req);
@@ -673,7 +725,7 @@ namespace Tiriryarai.Server
 							if (e is IOException || e is SocketException)
 								return DefaultHttpResponse(504);
 
-							logger.LogException(e);
+							logger.LogDebug(6, e);
 							return DefaultHttpResponse(502);
 						}
 						if (modified.HeaderContains("Connection", "close") || resp.HeaderContains("Connection", "close"))
@@ -702,7 +754,7 @@ namespace Tiriryarai.Server
 			}
 			catch (Exception e)
 			{
-				logger.LogException(e);
+				logger.LogDebug(2, e);
 				resp = DefaultHttpResponse(500, req);
 			}
 			return resp;
@@ -799,7 +851,7 @@ namespace Tiriryarai.Server
 			}
 			catch (Exception e)
 			{
-				logger.LogException(e);
+				logger.LogDebug(2, e);
 				resp = DefaultHttpResponse(500, req);
 			}
 			return resp;

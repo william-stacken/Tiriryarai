@@ -375,6 +375,33 @@ namespace Tiriryarai.Util
 			Task.Run(() => LogInternal(level, logname, head, obj));
 		}
 
+		/// <summary>
+		/// Logs an object to the debug log.
+		/// </summary>
+		/// <param name="level">The log level to use for the object.</param>
+		/// <param name="info">Information object to log.</param>
+		public void LogDebug(uint level, object info)
+		{
+			if (level < 1 || conf.LogVerbosity < level)
+				return;
+			string logname = "-Debug-";
+			string head = "DEBUG";
+			ThrowIfInvalid(level, logname, head, info);
+
+			Task.Run(() => LogInternal(level, logname, head, info));
+		}
+
+		/// <summary>
+		/// Prints an object to standard out in case it is allowed by the
+		/// configuration.
+		/// </summary>
+		/// <param name="o">object to print.</param>
+		public void WriteStdout(object o)
+		{
+			if (!conf.DisableStdout)
+				Console.WriteLine(o);
+		}
+
 		private void LogInternal(uint level, string logname, string head, object obj)
 		{
 			int attempts = 5;
@@ -420,49 +447,9 @@ namespace Tiriryarai.Util
 					}
 				}
 			}
-			catch (Exception e)
+			catch
 			{
-				LogException(e);
-			}
-		}
-
-		/// <summary>
-		/// Logs an exception to stdout.
-		/// </summary>
-		/// <param name="e">The exception.</param>
-		public void LogException(Exception e)
-		{
-			LogException(e, null);
-		}
-
-		/// <summary>
-		/// Logs an exception to stdout.
-		/// </summary>
-		/// <param name="e">The exception.</param>
-		/// <param name="info">Optional information object to log.</param>
-		public void LogException(Exception e, object info)
-		{
-			switch (conf.LogVerbosity)
-			{
-				case 0:
-				case 1:
-				case 2:
-				case 3:
-					break;
-				case 4:
-				case 5:
-				case 6:
-				case 7:
-					Console.WriteLine(e.Message);
-					if (info != null)
-						Console.WriteLine(info);
-					break;
-				default:
-					Console.WriteLine(e);
-					if (info != null)
-						Console.WriteLine(info);
-					break;
-
+				WriteStdout("\n--------------------\nWARNING: Request to log timed out.");
 			}
 		}
 
@@ -476,7 +463,7 @@ namespace Tiriryarai.Util
 					files[i] = Path.GetFileName(files[i]);
 					files[i] = files[i].Substring(0, files[i].Length - LOG_SUFFIX.Length);
 				}
-				Array.Sort(files, StringComparer.InvariantCulture);
+				Array.Sort(files, StringComparer.Ordinal);
 				return files;
 			}
 		}
@@ -555,27 +542,26 @@ namespace Tiriryarai.Util
 			{
 				for (int i = 0; i < attempts; i++)
 				{
-					try
+					using (MemoryStream ms = new MemoryStream())
 					{
-						using (MemoryStream ms = new MemoryStream())
+						FileStream s = null;
+						try
 						{
-							using (var s = new FileStream(path, FileMode.Open))
-							{
-								using (var logStream = new LogStream(s, conf.PassKey, mode: true))
-								{
-									logStream.CopyTo(ms);
-									return ms.ToArray();
-								}
-							}
+							s = new FileStream(path, FileMode.Open);
+						}
+						catch
+						{
+							Thread.Sleep(100);
+							continue;
+						}
+						using (var logStream = new LogStream(s, conf.PassKey, mode: true))
+						{
+							logStream.CopyTo(ms);
+							return ms.ToArray();
+							// s will be closed here since leaveOpen in LogStream is false by default
 						}
 					}
-					catch (Exception e)
-					{
-						LogException(e);
-						Thread.Sleep(100);
-					}
 				}
-				throw new IOException("Failed to read the log");
 			}
 			throw new FileNotFoundException(logname);
 		}

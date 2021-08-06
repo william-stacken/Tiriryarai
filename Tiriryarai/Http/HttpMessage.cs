@@ -552,7 +552,7 @@ namespace Tiriryarai.Http
 				else if (i > 0)
 				{
 					key = keyVal.Substring(0, i).ToLower();
-					val = keyVal.Substring(i + 1);
+					val = HttpUtility.UrlDecode(keyVal.Substring(i + 1));
 				}
 				else
 				{

@@ -164,10 +164,10 @@ namespace Tiriryarai.Util
 		[HttpsMitmProxy(HttpsMitmProxyProperty.Password | HttpsMitmProxyProperty.Authentication | HttpsMitmProxyProperty.Cache,
 			"password", "w|password=")]
 		[Description("The password required for accessing the admin pages if one should be required. " +
-			"It will be sent securely using HTTPS only. <strong>NOTICE:</strong> If this password is changed " +
-			"Tiriryarai will be unable to read any existing logs. If that is a concern, please back up the logs " +
-			"first. Furthermore, if updated at runtime, the cache will be cleared, meaning that you must re-install " +
-			"the root certificate.")]
+			"It will be sent securely using HTTPS only and can only be set if the username is set. " +
+			"<strong>NOTICE:</strong> If this password is changed, Tiriryarai will be unable to read any existing " +
+			"logs. If that is a concern, please back up the logs first. Furthermore, if updated at runtime, the " +
+			"cache will be cleared, meaning that you must re-install the root certificate.")]
 		public string Password
 		{
 			set
@@ -196,8 +196,9 @@ namespace Tiriryarai.Util
 		}
 
 		[HttpsMitmProxy(HttpsMitmProxyProperty.Password | HttpsMitmProxyProperty.Standard, "password", "x|proxy-pass=")]
-		[Description("The password required for using the proxy if one should be required. " +
-			"It will be sent insecurely using HTTP and <strong>SHOULD NOT</strong> be the same as the admin password.")]
+		[Description("The password required for using the proxy if one should be required. It will be sent " +
+			"insecurely using HTTP and can only be set if the username is set. Also, it <strong>SHOULD NOT</strong> " +
+			"be the same as the admin password.")]
 		public string ProxyPassword
 		{
 			set
@@ -326,11 +327,7 @@ namespace Tiriryarai.Util
 		}
 
 		private bool certignore;
-		/// <summary>
-		/// Gets or sets a value indicating whether invalid certificates should be ignored
-		/// by the HttpsClient.
-		/// </summary>
-		/// <value><c>true</c> if certificates should be ignored; otherwise, <c>false</c>.</value>
+
 		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard, "checkbox", "i|ignore-certs")]
 		[Description("Ignore invalid certificates when sending HTTPS requests.")]
 		public bool IgnoreCertificates
@@ -453,6 +450,17 @@ namespace Tiriryarai.Util
 				cachepoll = value;
 				LastModifiedTime = DateTime.UtcNow;
 			}
+		}
+
+		private bool disablestdout;
+
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard, "checkbox", "q|quiet")]
+		[Description("Do not print anything to standard out, such as incomming requests " +
+			"or status information.")]
+		public bool DisableStdout
+		{
+			get { return disablestdout; }
+			set { disablestdout = value; LastModifiedTime = DateTime.UtcNow; }
 		}
 
 		[HttpsMitmProxy(HttpsMitmProxyProperty.None, null, null)]
