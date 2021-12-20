@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Tiriryarai", "Tiriryarai\Tiriryarai.shproj", "{8702EF8E-FFFC-4A09-89B3-06840764E565}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TiriryaraiMitm", "Plugins\TiriryaraiMitm\TiriryaraiMitm.csproj", "{D593687D-0151-4305-B263-522A52EA4478}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MiddleMan", "Plugins\MiddleMan\MiddleMan.csproj", "{D593687D-0151-4305-B263-522A52EA4478}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TuxEverywhere", "Plugins\TuxEverywhere\TuxEverywhere.csproj", "{BDACCD8E-80D9-4AEE-8873-8CC9E2F9D9EA}"
 EndProject
