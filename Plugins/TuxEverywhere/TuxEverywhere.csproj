@@ -55,6 +55,15 @@
     <EmbeddedResource Include="tux.svg">
       <LogicalName>tux.svg</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="tux.mp3">
+      <LogicalName>tux.mp3</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="tux2.png">
+      <LogicalName>tux2.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="tux3.png">
+      <LogicalName>tux3.png</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

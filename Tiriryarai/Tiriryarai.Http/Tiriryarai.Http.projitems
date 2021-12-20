@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>{9C9CA888-CD1B-443B-BBB8-99859E7F3EB4}</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>Tiriryarai.Http</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)HttpsClient.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Http\HttpRequest.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Http\HttpResponse.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Http\HttpChunkStream.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Http\HttpMessage.cs" />
+  </ItemGroup>
+</Project>

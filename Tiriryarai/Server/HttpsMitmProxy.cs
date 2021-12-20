@@ -350,9 +350,12 @@ namespace Tiriryarai.Server
 									{
 										DefaultHttpBody(resp, "text/html", logger.ReadLog(logFile), true, req);
 									}
-									catch (IOException)
+									catch (Exception e)
 									{
-										DefaultInternalError(resp, req, Resources.LOG_ERR_MSG);
+										if (e is IOException)
+											DefaultInternalError(resp, req, Resources.LOG_ERR_MSG);
+										else
+											throw e;
 									}
 									return;
 								case Method.POST:

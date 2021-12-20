@@ -96,7 +96,7 @@ Install **Mono** from [here](https://www.mono-project.com/download/stable/#downl
     stored.
  4. Build and run the project.
 
-[`TiriryaraiMitm`](Plugins/TiriryaraiMitm) is a dummy example plugin that can be used for reference.
+[`MiddleMan`](Plugins/MiddleMan) is a dummy example plugin that can be used for reference.
 [`TuxEverywhere`](Plugins/TuxEverywhere) is another very serious plugin that illustrates what Tiriryarai
 can do if in the wrong (right) hands.
 

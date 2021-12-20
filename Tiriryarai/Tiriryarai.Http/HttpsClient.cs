@@ -23,9 +23,8 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Authentication;
-using Tiriryarai.Http;
 
-namespace Tiriryarai.Server
+namespace Tiriryarai.Http
 {
 	/// <summary>
 	/// A class for sending HTTP requests to hosts and retreiving HTTP responses.
@@ -57,7 +56,7 @@ namespace Tiriryarai.Server
 		public HttpsClient(string hostname, int timeout, bool tls) : this(hostname, timeout, tls, false) { }
 
 		/// <summary>
-		/// Initializes a new instance of the <see cref="T:Tiriryarai.Server.HttpsClient"/> class
+		/// Initializes a new instance of the <see cref="T:Tiriryarai.Http.HttpsClient"/> class
 		/// with the host it should interact with. This does not start an HTTPS session.
 		/// </summary>
 		/// <param name="hostname">The host and optional port that the client should interact with.

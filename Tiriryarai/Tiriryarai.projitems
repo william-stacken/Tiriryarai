@@ -3,44 +3,38 @@
   <PropertyGroup>
     <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
     <HasSharedItems>true</HasSharedItems>
-    <SharedGUID>{8702EF8E-FFFC-4A09-89B3-06840764E565}</SharedGUID>
+    <SharedGUID>{6AB84BA3-2896-4A53-AFE5-37964036AF1F}</SharedGUID>
   </PropertyGroup>
   <PropertyGroup Label="Configuration">
     <Import_RootNamespace>Tiriryarai</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(MSBuildThisFileDirectory)Http\HttpMessage.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Http\HttpRequest.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Http\HttpResponse.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\AuthorityInfoAccessExtension.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\CRLDistributionPointsExtension.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\CRLNumberExtension.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\KeyUsageExtension.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\OCSPNoCheckExtension.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\X509BasicOCSPResponseBuilder.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\X509CRLBuilder.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\X509OCSPCertID.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\X509OCSPRequest.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\X509OCSPResponse.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Security\X509OCSPSingleResponse.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Server\HttpsClient.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Server\HttpsMitmProxy.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Server\IManInTheMiddle.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Util\HttpsMitmProxyCache.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Util\HttpsMitmProxyConfig.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Util\Logger.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Util\HttpsMitmProxyAttribute.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Util\Resources.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Util\X509CertificateUrls.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Util\Logger.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Util\HttpsMitmProxyConfig.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Http\HttpChunkStream.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Program.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Util\IpClientStats.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Util\HttpsMitmProxyAttribute.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="$(MSBuildThisFileDirectory)Security\" />
-    <Folder Include="$(MSBuildThisFileDirectory)Http\" />
-    <Folder Include="$(MSBuildThisFileDirectory)Util\" />
-    <Folder Include="$(MSBuildThisFileDirectory)Server\" />
+    <Compile Include="$(MSBuildThisFileDirectory)Server\HttpsMitmProxy.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Server\IManInTheMiddle.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\X509BasicOCSPResponseBuilder.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\KeyUsageExtension.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\OCSPNoCheckExtension.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\X509OCSPRequest.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\X509OCSPCertID.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\X509OCSPResponse.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\CRLNumberExtension.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\X509CRLBuilder.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\X509OCSPSingleResponse.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\CRLDistributionPointsExtension.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Security\AuthorityInfoAccessExtension.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Program.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Tiriryarai.Http\HttpsClient.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Tiriryarai.Http\Http\HttpRequest.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Tiriryarai.Http\Http\HttpResponse.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Tiriryarai.Http\Http\HttpChunkStream.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Tiriryarai.Http\Http\HttpMessage.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)favicon.ico">
