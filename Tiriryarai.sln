@@ -1,7 +1,9 @@
 
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Tiriryarai", "Tiriryarai\Tiriryarai.shproj", "{8702EF8E-FFFC-4A09-89B3-06840764E565}"
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Tiriryarai", "Tiriryarai\Tiriryarai.shproj", "{6AB84BA3-2896-4A53-AFE5-37964036AF1F}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Tiriryarai.Http", "Tiriryarai\Tiriryarai.Http\Tiriryarai.Http.shproj", "{9C9CA888-CD1B-443B-BBB8-99859E7F3EB4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MiddleMan", "Plugins\MiddleMan\MiddleMan.csproj", "{D593687D-0151-4305-B263-522A52EA4478}"
 EndProject
