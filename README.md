@@ -83,7 +83,11 @@ It accessed using HTTPS only and can optionally configured to be protected using
 
 ## 4. How To Build
 ### 4.1 Linux
-Install **Mono** from [here](https://www.mono-project.com/download/stable/#download-lin) and run `msbuild Tiriryarai.sln`
+Install **Mono** from [here](https://www.mono-project.com/download/stable/#download-lin)
+Restore packages using `msbuild -p:RestorePackagesConfig=true -t:restore Tiriryarai.sln` and
+build using `msbuild Tiriryarai.sln`.
+See [here](https://github.com/KSP-CKAN/CKAN/wiki/Installing-CKAN-on-Arch#manual-install) for how to fix problems
+with msbuild on Arch Linux.
 
 ## 5. Adding Plugins
  1. Add a new .NET Console application project to the solution. Select .NET Framework 4.8 as the target framework.
