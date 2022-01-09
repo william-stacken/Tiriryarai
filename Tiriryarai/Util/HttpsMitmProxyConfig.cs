@@ -406,6 +406,26 @@ namespace Tiriryarai.Util
 			}
 		}
 
+		private int? responsecachetime = null;
+
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard, "number", "z|cache-response=")]
+		[Description("The time in milliseconds to cache a HTTP response received from a remote server. " +
+			"Negative values and zero are infinite means responses should not be cached which is the default.")]
+		public int CacheResponseTime
+		{
+			get
+			{
+				if (responsecachetime == null)
+					responsecachetime = DefaultCacheResponseTime;
+				return (int)responsecachetime;
+			}
+			set
+			{
+				responsecachetime = value;
+				LastModifiedTime = DateTime.UtcNow;
+			}
+		}
+
 		private uint? cachemmemlimit;
 
 		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard | HttpsMitmProxyProperty.Cache,
@@ -461,6 +481,17 @@ namespace Tiriryarai.Util
 		{
 			get { return disablestdout; }
 			set { disablestdout = value; LastModifiedTime = DateTime.UtcNow; }
+		}
+
+		private bool lightMode;
+
+		[HttpsMitmProxy(HttpsMitmProxyProperty.Standard, "checkbox", "j|light-mode")]
+		[Description("Only the HTTP headers will be sent to plugins and the HTTP body " +
+			"will be forwarded without being cached. For use on contrained devices. (CURRENTLY NOT SUPPORTED AND DOES NOTHING)")]
+		public bool LightMode
+		{
+			get { return lightMode; }
+			set { lightMode = value; LastModifiedTime = DateTime.UtcNow; }
 		}
 
 		[HttpsMitmProxy(HttpsMitmProxyProperty.None, null, null)]
@@ -566,6 +597,11 @@ namespace Tiriryarai.Util
 		private static int DefaultKeepAliveTimeout
 		{
 			get { return 1000; }
+		}
+
+		private static int DefaultCacheResponseTime
+		{
+			get { return 0; }
 		}
 
 		private static uint DefaultCacheMemoryLimit

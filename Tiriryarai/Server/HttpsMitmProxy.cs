@@ -575,6 +575,13 @@ namespace Tiriryarai.Server
 						throw e;
 					}
 					toTiriryarai = IsTiriryarai(host);
+					if (!toTiriryarai && conf.MitM.Block(host))
+					{
+						resp = DefaultHttpResponse(403);
+						resp.ToStream(stream);
+						client.Close();
+						return;
+					}
 
 					if (req.Method == Method.CONNECT)
 					{
@@ -720,7 +727,15 @@ namespace Tiriryarai.Server
 
 						try
 						{
-							resp = destination.Send(modified);
+							if (conf.CacheResponseTime > 0)
+							{
+								resp = cache.GetHttpResponse(modified, r =>
+									destination.Send(r as HttpRequest), DateTime.Now.AddMilliseconds(conf.CacheResponseTime));
+							}
+							else
+							{
+								resp = destination.Send(modified);
+							}
 						}
 						catch (Exception e)
 						{

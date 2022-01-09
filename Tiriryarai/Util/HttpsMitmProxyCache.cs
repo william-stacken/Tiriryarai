@@ -33,6 +33,7 @@ using Mono.Security.X509;
 using Mono.Security.X509.Extensions;
 
 using Tiriryarai.Crypto;
+using Tiriryarai.Http;
 
 using CRLDistributionPointsExtension = Tiriryarai.Crypto.CRLDistributionPointsExtension;
 using KeyUsageExtension = Tiriryarai.Crypto.KeyUsageExtension;
@@ -275,6 +276,17 @@ namespace Tiriryarai.Util
 				val => (
 					val as X509Certificate2)?.NotAfter ?? DateTime.MinValue
 				) as X509Certificate2;
+		}
+
+		/// <summary>
+		/// Gets a response for the given HTTP request that has previously been cached.
+		/// If it has expired or there was no cached response, a response will be obtained
+		/// from the given callback.
+		/// </summary>
+		/// <returns>The cached or generated HTTP response.</returns>
+		public HttpResponse GetHttpResponse(HttpRequest req, Func<object, object> valueFactory, DateTime expiry)
+		{
+			return AddOrGetExisting(req.Host + req.Path, valueFactory, val => expiry) as HttpResponse;
 		}
 
 		/// <summary>
