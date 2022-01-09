@@ -147,7 +147,7 @@ namespace Tiriryarai.Http
 				throw new IOException("Unexpected EOF");
 
 			string[] respLineParts = respLine.Split(' ');
-			if (respLineParts.Length < 3)
+			if (respLineParts.Length < 2) // status message optional
 				throw new Exception("Bad Response Line: " + respLine);
 
 			if (!respLineParts[0].Split('/')[0].Equals("HTTP"))

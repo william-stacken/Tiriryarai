@@ -22,6 +22,7 @@ using System.Net;
 using System.IO;
 using System.Threading;
 using System.Collections;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Collections.Concurrent;
 using System.Runtime.Caching;
@@ -50,6 +51,7 @@ namespace Tiriryarai.Util
 	{
 		private static readonly string rootCA = "-RootCA-.pfx";
 		private static readonly string ocspCA = "-OcspCA-.pfx";
+		private string pkcs12Dir;
 
 		private static HttpsMitmProxyCache singleton;
 		private static readonly Random rng = new Random();
@@ -58,7 +60,7 @@ namespace Tiriryarai.Util
 		private Logger logger;
 		private MemoryCache cache;
 
-		private string[] mitmHosts;
+		private HashSet<string> mitmHosts;
 		private X509CertificateUrls urls;
 
 		private ConcurrentDictionary<object, byte> mutex;
@@ -67,7 +69,7 @@ namespace Tiriryarai.Util
 		{
 			conf = HttpsMitmProxyConfig.GetSingleton();
 			logger = Logger.GetSingleton();
-			mitmHosts = new string[] { Resources.HOSTNAME, conf.Hostname };
+			mitmHosts = new HashSet<string> { Resources.HOSTNAME, conf.Hostname };
 			mutex = new ConcurrentDictionary<object, byte>();
 
 			urls = new X509CertificateUrls(
@@ -75,6 +77,9 @@ namespace Tiriryarai.Util
 				"http://" + Resources.HOSTNAME + "/" + Resources.OCSP_PATH,
 				"http://" + Resources.HOSTNAME + "/" + Resources.CRL_PATH
 			);
+
+			pkcs12Dir = Path.Combine(conf.ConfigDirectory, "pkcs12");
+			Directory.CreateDirectory(pkcs12Dir);
 			Initialize();
 		}
 
@@ -90,14 +95,21 @@ namespace Tiriryarai.Util
 		/// This means that a new Root CA is generated that must be installed in
 		/// clients.
 		/// </summary>
-		public void Clear()
+		/// <returns>The new Root CA certificate that was generated after clearing the cache.</returns>
+		public X509Certificate2 Clear()
 		{
 			// Remove all PKCS12 files
 			foreach (string pfxFile in Directory.GetFiles(conf.ConfigDirectory, "*.pfx"))
 				File.Delete(pfxFile);
+			foreach (string pfxFile in Directory.GetFiles(pkcs12Dir, "*.pfx"))
+				File.Delete(pfxFile);
 
 			cache.Dispose();
 			Initialize();
+
+			logger.LogDebug(1, "NOTICE: The root CA certificate has been deleted and will be replaced." +
+			                   "Please install the new certificate and remove the old one.");
+			return GetRootCA();
 		}
 
 		private void Initialize()
@@ -107,42 +119,27 @@ namespace Tiriryarai.Util
 				{"PollingInterval", TimeSpan.FromMilliseconds(conf.CachePollingInterval).ToString()},
 			});
 
-			InitializePKCS12(rootCA, Path.Combine(conf.ConfigDirectory, rootCA), CreateRootCertFile, GetRootCA);
-			InitializePKCS12(ocspCA, Path.Combine(conf.ConfigDirectory, ocspCA), CreateOCSPCertFile, GetOCSPCA);
-
+			// Populate the cache with fundamental certificates
+			GetRootCA();
+			GetOCSPCA();
 			foreach (string mitmHost in mitmHosts)
 			{
-				InitializePKCS12(mitmHost,
-				                 Path.Combine(conf.ConfigDirectory, mitmHost + ".pfx"),
-				                 CreateCertificate,
-				                 () => GetCertificate(mitmHost));
+				GetCertificate(mitmHost);
 			}
 
-			// Remove PKCS12 files that are no longer in use
-			foreach (string pfxFile in Directory.GetFiles(conf.ConfigDirectory, "*.pfx"))
+			// Add PKCS12 files for sites
+			foreach (string pfxFile in Directory.GetFiles(pkcs12Dir, "*.pfx"))
 			{
-				bool isUnused = true;
-				string name = Path.GetFileNameWithoutExtension(pfxFile);
-				if (!name.Equals("-RootCA-") && !name.Equals("-OcspCA-"))
-				{
-					for (int i = 0; isUnused && i < mitmHosts.Length; i++)
-					{
-						isUnused = !name.Equals(mitmHosts[i]);
-					}
-					if (isUnused)
-					{
-						File.Delete(pfxFile);
-					}
-				}
+				GetCertificate(Path.GetFileNameWithoutExtension(pfxFile));
 			}
 		}
 
-		private void InitializePKCS12(object key, string filepath, Func<object, object> pkcs12Factory, Func<X509Certificate2> pkcs12Get)
+		private object InitializePKCS12(object key, string filepath, Func<object, object> pkcs12Factory)
 		{
 			X509Certificate2Collection collection;
 			if (!File.Exists(filepath))
 			{
-				AddOrGetExisting(key, pkcs12Factory, val => (val as X509Certificate2)?.NotAfter ?? DateTime.MinValue);
+				return pkcs12Factory(key) as X509Certificate2;
 			}
 			else
 			{
@@ -165,9 +162,9 @@ namespace Tiriryarai.Util
 				X509Certificate2 cert = collection[0];
 				if (cert.NotAfter < DateTime.UtcNow)
 				{
-					cert = pkcs12Get();
+					cert = pkcs12Factory(key) as X509Certificate2;
 				}
-				AddOrGetExisting(key, path => cert, val => (val as X509Certificate2)?.NotAfter ?? DateTime.MinValue);
+				return cert as X509Certificate2;
 			}
 		}
 
@@ -201,15 +198,17 @@ namespace Tiriryarai.Util
 		/// <returns>The root CA.</returns>
 		public X509Certificate2 GetRootCA()
 		{
-			return AddOrGetExisting(rootCA, certPath => {
-				if (!(certPath is string path))
-					throw new ArgumentException("certPath must be a string");
-				logger.LogDebug(1, "NOTICE: The root CA certificate has expired and will be replaced." +
-							"Please install the new certificate and remove the old one.");
-				// TODO Clear the cache somehow since essentially everything in the cache is now invalid.
-				File.Delete(path);
-				return CreateRootCertFile(path);
-			}, val => (val as X509Certificate2)?.NotAfter ?? DateTime.MinValue) as X509Certificate2;
+			string rootFile = Path.Combine(conf.ConfigDirectory, rootCA);
+			return AddOrGetExisting(rootCA,
+				cert => (
+					// TODO Is this an appropriate way to clear the cache and not use recursion?
+					InitializePKCS12(rootCA,
+					                 rootFile,
+					                 _ => File.Exists(rootFile) ? Clear() : CreateRootCertFile(cert))
+				),
+				val => (
+					val as X509Certificate2)?.NotAfter ?? DateTime.MinValue
+				) as X509Certificate2;
 		}
 
 		/// <summary>
@@ -220,12 +219,15 @@ namespace Tiriryarai.Util
 		/// <returns>The OCSP CA.</returns>
 		public X509Certificate2 GetOCSPCA()
 		{
-			return AddOrGetExisting(ocspCA, certPath => {
-				if (!(certPath is string path))
-					throw new ArgumentException("certPath must be a string");
-				File.Delete(path);
-				return CreateOCSPCertFile(path);
-			}, val => (val as X509Certificate2)?.NotAfter ?? DateTime.MinValue) as X509Certificate2;
+			return AddOrGetExisting(ocspCA,
+				cert => (
+					InitializePKCS12(ocspCA,
+					                 Path.Combine(conf.ConfigDirectory, ocspCA),
+					                 CreateOCSPCertFile)
+				),
+				val => (
+					val as X509Certificate2)?.NotAfter ?? DateTime.MinValue
+				) as X509Certificate2;
 		}
 
 		/// <summary>
@@ -238,6 +240,7 @@ namespace Tiriryarai.Util
 		{
 			int i;
 			string[] subdomains;
+			string pfxPath;
 			if (hostname == null)
 				throw new ArgumentNullException(nameof(hostname));
 
@@ -259,10 +262,19 @@ namespace Tiriryarai.Util
 						hostname = hostname.Substring(i + 1, hostname.Length - i - 1);
 				}
 			}
-
-			return AddOrGetExisting(hostname, CreateCertificate, val => (
-				val as X509Certificate2)?.NotAfter ?? DateTime.MinValue
-			) as X509Certificate2;
+			if (mitmHosts.Contains(hostname))
+				pfxPath = conf.ConfigDirectory;
+			else
+				pfxPath = pkcs12Dir;
+			return AddOrGetExisting(hostname,
+				host => (
+					InitializePKCS12(host,
+					                 Path.Combine(pfxPath, host + ".pfx"),
+									 CreateCertificate)
+				),
+				val => (
+					val as X509Certificate2)?.NotAfter ?? DateTime.MinValue
+				) as X509Certificate2;
 		}
 
 		/// <summary>
@@ -303,15 +315,15 @@ namespace Tiriryarai.Util
 		{
 			if (ip == null)
 				throw new ArgumentNullException(nameof(ip));
-			// TODO Expire statistics after 14 days, maybe there is a better time frame?
-			return AddOrGetExisting("$" + ip, val => new IpClientStats(), val => DateTime.UtcNow.AddDays(14)
+			// TODO Expire statistics after 1 day, maybe there is a better time frame? Add to configuration
+			return AddOrGetExisting("$" + ip, val => new IpClientStats(), val => DateTime.UtcNow.AddDays(1)
 			) as IpClientStats;
 		}
 
 		private PKCS12 SaveToPKCS12(string path,
-		                                   X509CertificateBuilder cb,
-		                                   AsymmetricAlgorithm subjectKey,
-		                                   AsymmetricAlgorithm issuerKey)
+		                            X509CertificateBuilder cb,
+		                            AsymmetricAlgorithm subjectKey,
+		                            AsymmetricAlgorithm issuerKey)
 		{
 			PKCS12 p12 = new PKCS12();
 			p12.Password = conf.Authenticate ? Convert.ToBase64String(conf.PassKey) : Resources.HARDCODED_PFX_PASS;
@@ -496,11 +508,12 @@ namespace Tiriryarai.Util
 			p12.AddCertificate(new X509Certificate(cb.Sign(root.PrivateKey)), attributes);
 			p12.AddPkcs8ShroudedKeyBag(subjectKey, attributes);
 
-			foreach (string mitmHost in mitmHosts)
-			{
-				if (hostname.Equals(mitmHost))
-					p12.SaveToFile(Path.Combine(conf.ConfigDirectory, mitmHost + ".pfx"));
-			}
+			// Mitm Host certificates goes into the root configuration, while other sites
+			// goes into th pkcs12 directory
+			if (mitmHosts.Contains(hostname))
+				p12.SaveToFile(Path.Combine(conf.ConfigDirectory, hostname + ".pfx"));
+			else
+				p12.SaveToFile(Path.Combine(pkcs12Dir, hostname + ".pfx"));
 
 			return new X509Certificate2(
 				p12.GetBytes(),
