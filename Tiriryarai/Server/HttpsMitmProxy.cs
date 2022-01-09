@@ -729,8 +729,7 @@ namespace Tiriryarai.Server
 						{
 							if (conf.CacheResponseTime > 0)
 							{
-								resp = cache.GetHttpResponse(modified, r =>
-									destination.Send(r as HttpRequest), DateTime.Now.AddMilliseconds(conf.CacheResponseTime));
+								resp = cache.GetHttpResponse(modified, r => destination.Send(r as HttpRequest));
 							}
 							else
 							{

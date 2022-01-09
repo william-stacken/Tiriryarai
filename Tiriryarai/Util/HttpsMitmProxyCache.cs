@@ -290,9 +290,11 @@ namespace Tiriryarai.Util
 		/// from the given callback.
 		/// </summary>
 		/// <returns>The cached or generated HTTP response.</returns>
-		public HttpResponse GetHttpResponse(HttpRequest req, Func<object, object> valueFactory, DateTime expiry)
+		public HttpResponse GetHttpResponse(HttpRequest req, Func<object, object> valueFactory)
 		{
-			return AddOrGetExisting(req.Host + req.Path, valueFactory, val => expiry, req) as HttpResponse;
+			return AddOrGetExisting(req.Host + req.Path, valueFactory, val =>
+				DateTime.Now.AddMilliseconds(conf.CacheResponseTime)
+			, req) as HttpResponse;
 		}
 
 		/// <summary>
