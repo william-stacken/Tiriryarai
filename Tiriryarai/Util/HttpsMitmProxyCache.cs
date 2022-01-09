@@ -110,7 +110,7 @@ namespace Tiriryarai.Util
 
 			logger.LogDebug(1, "NOTICE: The root CA certificate has been deleted and will be replaced." +
 			                   "Please install the new certificate and remove the old one.");
-			return GetRootCA();
+			return CreateRootCertFile(rootCA);
 		}
 
 		private void Initialize()
@@ -171,25 +171,31 @@ namespace Tiriryarai.Util
 
 		private object AddOrGetExisting(object key, Func<object, object> valueFactory, Func<object, DateTime> expiry)
 		{
-			object val = null;
+			return AddOrGetExisting(key, valueFactory, expiry, key);
+		}
 
-			while (!mutex.TryAdd(key, 0))
+		private object AddOrGetExisting(object key, Func<object, object> valueFactory, Func<object, DateTime> expiry, object keyObj)
+		{
+			object val = null;
+			string keyStr = key.ToString();
+
+			while (!mutex.TryAdd(keyStr, 0))
 				Thread.Sleep(100);
 
 			try
 			{
-				val = cache.Get(key.ToString());
+				val = cache.Get(keyStr);
 				if (val == null)
 				{
-					val = valueFactory(key);
-					cache.Add(key.ToString(), val, expiry(val));
+					val = valueFactory(keyObj);
+					cache.Add(keyStr, val, expiry(val));
 				}
 			}
 			finally
 			{
-				mutex.TryRemove(key, out _);
+				mutex.TryRemove(keyStr, out _);
 			}
-			return val ?? throw new Exception("ERROR: Failed to add or get " + key + " from cache.");
+			return val ?? throw new Exception("ERROR: Failed to add or get " + keyStr + " from cache.");
 		}
 
 		/// <summary>
@@ -286,7 +292,7 @@ namespace Tiriryarai.Util
 		/// <returns>The cached or generated HTTP response.</returns>
 		public HttpResponse GetHttpResponse(HttpRequest req, Func<object, object> valueFactory, DateTime expiry)
 		{
-			return AddOrGetExisting(req.Host + req.Path, valueFactory, val => expiry) as HttpResponse;
+			return AddOrGetExisting(req.Host + req.Path, valueFactory, val => expiry, req) as HttpResponse;
 		}
 
 		/// <summary>
