@@ -160,23 +160,22 @@ namespace Tiriryarai.Http
 		/// <param name="hasBody">If set to <c>false</c>, the request is assumed to not have a body.</param>
 		public static new HttpRequest FromStream(Stream stream, bool hasBody)
 		{
-			HttpMessage http;
-			string uri;
-			string reqLine = ReadLine(stream);
-			if (reqLine == null)
-				throw new IOException("Unexpected EOF");
+			ReqLineFromStream(stream, out Method method, out string uri);
+			HttpMessage http = HttpMessage.FromStream(stream, hasBody);
+			return new HttpRequest(method, uri, http.Headers, http.Body);
+		}
 
-			string[] reqLineParts = reqLine.Split(' ');
-			if (reqLineParts.Length < 3)
-				throw new Exception("Bad Request Line: " + reqLine);
-
-			if (!Enum.TryParse(reqLineParts[0], false, out Method method))
-				throw new Exception("Bad Request Line: " + reqLine);
-			uri = reqLineParts[1];
-			if (!reqLineParts[2].Split('/')[0].Equals("HTTP"))
-				throw new Exception("Bad Request Line: " + reqLine);
-
-			http = HttpMessage.FromStream(stream, hasBody);
+		/// <summary>
+		/// Creates an <see cref="T:Tiriryarai.Http.HttpRequest"/> instance from a stream.
+		/// The body to the HTTP request is decoded appropriately and written to another stream.
+		/// </summary>
+		/// <returns>A new instance.</returns>
+		/// <param name="stream">The stream to read the <see cref="T:Tiriryarai.Http.HttpRequest"/> from.</param>
+		/// <param name="body">The stream to write the decoded HTTP body of the request to.</param>
+		public static new HttpRequest FromStream(Stream stream, Stream body)
+		{
+			ReqLineFromStream(stream, out Method method, out string uri);
+			HttpMessage http = HttpMessage.FromStream(stream, body);
 			return new HttpRequest(method, uri, http.Headers, http.Body);
 		}
 
@@ -189,6 +188,18 @@ namespace Tiriryarai.Http
 			byte[] enc = Encoding.Default.GetBytes(RequestLine);
 			stream.Write(enc, 0, enc.Length);
 			base.ToStream(stream);
+		}
+
+		/// <summary>
+		/// Writes an <see cref="T:Tiriryarai.Http.HttpRequest"/> instance to a stream.
+		/// </summary>
+		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpRequest"/> to.</param>
+		/// <param name="body">The stream to copy the HTTP body from.</param>
+		public override void ToStream(Stream stream, Stream body)
+		{
+			byte[] enc = Encoding.Default.GetBytes(RequestLine);
+			stream.Write(enc, 0, enc.Length);
+			base.ToStream(stream, body);
 		}
 
 		/// <summary>
@@ -209,6 +220,23 @@ namespace Tiriryarai.Http
 		public override string ToString()
 		{
 			return RequestLine + base.ToString();
+		}
+
+		private static void ReqLineFromStream(Stream stream, out Method method, out string uri)
+		{
+			string reqLine = ReadLine(stream);
+			if (reqLine == null)
+				throw new IOException("Unexpected EOF");
+
+			string[] reqLineParts = reqLine.Split(' ');
+			if (reqLineParts.Length < 3)
+				throw new Exception("Bad Request Line: " + reqLine);
+
+			if (!Enum.TryParse(reqLineParts[0], false, out method))
+				throw new Exception("Bad Request Line: " + reqLine);
+			uri = reqLineParts[1];
+			if (!reqLineParts[2].Split('/')[0].Equals("HTTP"))
+				throw new Exception("Bad Request Line: " + reqLine);
 		}
 	}
 }

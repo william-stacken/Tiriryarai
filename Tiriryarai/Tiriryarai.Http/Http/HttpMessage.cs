@@ -60,7 +60,13 @@ namespace Tiriryarai.Http
 		{
 			get
 			{
-				return Chunked ? ReadChunked(new MemoryStream(Body), false) : Body;
+				if (Chunked)
+				{
+					MemoryStream ms = new MemoryStream();
+					ReadChunked(new MemoryStream(Body), ms, false);
+					return ms.ToArray();
+				}
+				return Body;
 			}
 
 			set
@@ -598,6 +604,19 @@ namespace Tiriryarai.Http
 
 		protected static HttpMessage FromStream(Stream stream, bool hasBody)
 		{
+			MemoryStream bodyBuf = new MemoryStream();
+			HttpMessage http = FromStream(stream, hasBody ? bodyBuf : null, true);
+			http.Body = bodyBuf.ToArray();
+			return http;
+		}
+
+		protected static HttpMessage FromStream(Stream stream, Stream body)
+		{
+			return FromStream(stream, body, false);
+		}
+
+		private static HttpMessage FromStream(Stream stream, Stream body, bool keepEncoding)
+		{
 			HttpMessage http;
 			List<KeyValuePair<string, string[]>> headers = new List<KeyValuePair<string, string[]>>();
 			string[] keyVal;
@@ -608,7 +627,7 @@ namespace Tiriryarai.Http
 				int split = line.IndexOf(": ", StringComparison.Ordinal);
 				if (split < 0)
 					throw new Exception("Bad header: " + line);
-				keyVal = new string[] {line.Substring(0, split), line.Substring(split + 2)};
+				keyVal = new string[] { line.Substring(0, split), line.Substring(split + 2) };
 
 				vals = keyVal[1].Split(',');
 				for (int i = 0; i < vals.Length; i++)
@@ -616,7 +635,9 @@ namespace Tiriryarai.Http
 				headers.Add(new KeyValuePair<string, string[]>(keyVal[0], vals));
 			}
 			http = new HttpMessage(headers);
-			return hasBody ? ReadMessageBody(http, stream) : http;
+			if (body != null)
+				ReadMessageBody(http, stream, body, keepEncoding);
+			return http;
 		}
 
 		public virtual void ToStream(Stream stream)
@@ -625,6 +646,15 @@ namespace Tiriryarai.Http
 
 			stream.Write(enc, 0, enc.Length);
 			stream.Write(Body, 0, Body.Length);
+			stream.Flush();
+		}
+
+		public virtual void ToStream(Stream stream, Stream body)
+		{
+			byte[] enc = Encoding.Default.GetBytes(RawHeaders);
+
+			stream.Write(enc, 0, enc.Length);
+			body.CopyTo(stream);
 			stream.Flush();
 		}
 
@@ -701,94 +731,68 @@ namespace Tiriryarai.Http
 			throw new Exception("Remote sent an unexpectedly long line: " + new string(headBuf, 0, headBuf.Length));
 		}
 
-		private static HttpMessage ReadMessageBody(HttpMessage http, Stream stream)
+		private static void ReadMessageBody(HttpMessage http, Stream from, Stream to, bool keepEncoding)
 		{
-			byte[] bytes = new byte[0];
 			uint? contentLength;
 
 			if (http.Chunked)
 			{
-				bytes = ReadChunked(stream, true);
+				ReadChunked(from, to, keepEncoding);
 			}
 			else
 			{
 				contentLength = http.ContentLength;
 				if (contentLength != null)
 				{
-					bytes = ReadBytes(stream, (uint)contentLength);
+					ReadBytes(from, to, (uint)contentLength);
 				}
 			}
-			http.Body = bytes;
-			return http;
 		}
 
 		// TODO: This should be moved to <see cref="T:Tiriryarai.Http.HttpChunkStream"/>
 		// along with a mode optionally keep the encoding of the stream intact
-		private static byte[] ReadChunked(Stream stream, bool keepEncoding)
+		private static void ReadChunked(Stream from, Stream to, bool keepEncoding)
 		{
-			List<byte> bytesList = new List<byte>(4096);
+			int read;
 			string chunkSizeHex;
 			uint chunkSize;
-			byte[] chunk;
+			byte[] chunkSizeHexEnc;
 			do
 			{
-				chunkSizeHex = ReadLine(stream, 24);
+				chunkSizeHex = ReadLine(from, 24);
 				if (!uint.TryParse(chunkSizeHex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out chunkSize))
 					throw new Exception("Remote sent bad chunk size: " + chunkSizeHex);
 				if (keepEncoding)
 				{
-					bytesList.AddRange(Encoding.Default.GetBytes(chunkSizeHex + "\r\n"));
+					chunkSizeHexEnc = Encoding.Default.GetBytes(chunkSizeHex + "\r\n");
+					to.Write(chunkSizeHexEnc, 0, chunkSizeHexEnc.Length);
 				}
-				chunk = ReadBytes(stream, chunkSize);
-				bytesList.AddRange(chunk);
+				read = ReadBytes(from, to, chunkSize);
 				// Assmue trailing CRLF
-				stream.ReadByte();
-				stream.ReadByte();
+				from.ReadByte();
+				from.ReadByte();
 				if (keepEncoding)
 				{
-					bytesList.Add(0xD);
-					bytesList.Add(0xA);
+					to.WriteByte(0xD);
+					to.WriteByte(0xA);
 				}
-			} while (chunkSize > 0 && chunk.Length >= chunkSize);
-			return bytesList.ToArray();
+			} while (chunkSize > 0 && read >= chunkSize);
 		}
 
-		private static byte[] ReadBytes(Stream stream, uint len)
+		private static int ReadBytes(Stream from, Stream to, uint len)
 		{
-			if (stream == null)
-				return new byte[0];
+			if (from == null || to == null)
+				return 0;
 			if (len > (1 << 30))
 				throw new Exception("The server tried to send way too much data.");
 			int i;
-			int b;
-			byte[] bytes = new byte[len];
-			for (i = 0; i < len && (b = stream.ReadByte()) >= 0; i++)
+			int read;
+			byte[] bytes = new byte[Math.Min(len, 2048)];
+			for (i = 0; i < len && (read = from.Read(bytes, 0, (int) Math.Min(bytes.Length, len - i))) >= 0; i += read)
 			{
-				bytes[i] = (byte)b;
+				to.Write(bytes, 0, read);
 			}
-
-			if (i < len)
-			{
-				Array.Resize(ref bytes, i);
-			}
-			return bytes;
-		}
-
-		private static byte[] ReadAllBytes(Stream stream)
-		{
-			// Read until the server closes the connection
-			if (stream == null)
-				return new byte[0];
-			List<byte> bytesList = new List<byte>(4096);
-			byte[] bytes;
-			long b;
-			while ((b = stream.ReadByte()) >= 0)
-			{
-				bytesList.Add((byte)b);
-			}
-			bytes = bytesList.ToArray();
-
-			return bytes;
+			return i;
 		}
 	}
 }
