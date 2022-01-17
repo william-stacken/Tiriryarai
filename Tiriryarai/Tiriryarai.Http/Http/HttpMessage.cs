@@ -640,7 +640,7 @@ namespace Tiriryarai.Http
 			return http;
 		}
 
-		public virtual void ToStream(Stream stream)
+		protected virtual void ToStream(Stream stream)
 		{
 			byte[] enc = Encoding.Default.GetBytes(RawHeaders);
 
@@ -649,7 +649,7 @@ namespace Tiriryarai.Http
 			stream.Flush();
 		}
 
-		public virtual void ToStream(Stream stream, Stream body)
+		protected virtual void ToStream(Stream stream, Stream body)
 		{
 			byte[] enc = Encoding.Default.GetBytes(RawHeaders);
 

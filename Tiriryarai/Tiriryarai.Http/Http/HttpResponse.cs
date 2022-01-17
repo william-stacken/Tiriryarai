@@ -139,7 +139,7 @@ namespace Tiriryarai.Http
 		/// <returns>A new instance.</returns>
 		/// <param name="stream">The stream to read the <see cref="T:Tiriryarai.Http.HttpResponse"/> from.</param>
 		/// <param name="hasBody">If set to <c>false</c>, the response is assumed to not have a body.</param>
-		private static new HttpResponse FromStream(Stream stream, bool hasBody)
+		public static new HttpResponse FromStream(Stream stream, bool hasBody)
 		{
 			RespLineFromStream(stream, out int status);
 			HttpMessage http = HttpMessage.FromStream(stream, hasBody && status >= 200 && status != 204 && status != 304);
@@ -152,7 +152,7 @@ namespace Tiriryarai.Http
 		/// <returns>A new instance.</returns>
 		/// <param name="stream">The stream to read the <see cref="T:Tiriryarai.Http.HttpResponse"/> from.</param>
 		/// <param name="body">The stream to write the decoded HTTP body of the response to.</param>
-		private static new HttpResponse FromStream(Stream stream, Stream body)
+		public static new HttpResponse FromStream(Stream stream, Stream body)
 		{
 			RespLineFromStream(stream, out int status);
 			HttpMessage http = HttpMessage.FromStream(stream, body);
@@ -163,7 +163,7 @@ namespace Tiriryarai.Http
 		/// Writes an <see cref="T:Tiriryarai.Http.HttpResponse"/> instance to a stream.
 		/// </summary>
 		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpResponse"/> to.</param>
-		public override void ToStream(Stream stream)
+		public new void ToStream(Stream stream)
 		{
 			byte[] enc = Encoding.Default.GetBytes(ResponseLine);
 			stream.Write(enc, 0, enc.Length);
@@ -175,7 +175,7 @@ namespace Tiriryarai.Http
 		/// </summary>
 		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpResponse"/> to.</param>
 		/// <param name="body">The stream to copy the HTTP body from.</param>
-		public override void ToStream(Stream stream, Stream body)
+		public new void ToStream(Stream stream, Stream body)
 		{
 			byte[] enc = Encoding.Default.GetBytes(ResponseLine);
 			stream.Write(enc, 0, enc.Length);

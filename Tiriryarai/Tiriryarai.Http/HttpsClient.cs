@@ -19,6 +19,7 @@
 
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
@@ -38,6 +39,7 @@ namespace Tiriryarai.Http
 		private readonly int timeout;
 		private readonly bool tls;
 		private readonly bool ignoreCerts;
+		private readonly int retries;
 		private TcpClient openConnection;
 		private Stream server;
 
@@ -53,7 +55,9 @@ namespace Tiriryarai.Http
 
 		public HttpsClient(string hostname) : this(hostname, 0) { }
 		public HttpsClient(string hostname, int timeout) : this(hostname, timeout, true) { }
-		public HttpsClient(string hostname, int timeout, bool tls) : this(hostname, timeout, tls, false) { }
+		public HttpsClient(string hostname, int timeout, bool tls) : this(hostname, timeout, tls, false, 5) { }
+		public HttpsClient(string hostname, int timeout, int retries) : this(hostname, timeout, true, false, retries) { }
+		public HttpsClient(string hostname, int timeout, bool tls, int retries) : this(hostname, timeout, tls, false, retries) { }
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:Tiriryarai.Http.HttpsClient"/> class
@@ -66,7 +70,8 @@ namespace Tiriryarai.Http
 		/// <param name="timeout">The amount of time to wait for responses in milliseconds.</param>
 		/// <param name="tls">if <c>true</c>, send requests over TLS</param>
 		/// <param name="ignoreCerts">if <c>true</c>, ignore invalid certificates.</param>
-		public HttpsClient(string hostname, int timeout, bool tls, bool ignoreCerts)
+		/// <param name="retries">How many times the request should be retries in case of an IOException.</param>
+		public HttpsClient(string hostname, int timeout, bool tls, bool ignoreCerts, int retries)
 		{
 			string[] nameSplit = hostname.Split(':');
 			ushort p = (ushort)(tls ? 443 : 80);
@@ -84,6 +89,7 @@ namespace Tiriryarai.Http
 			this.tls = tls;
 			this.timeout = timeout;
 			this.ignoreCerts = ignoreCerts;
+			this.retries = retries;
 		}
 
 		/// <summary>
@@ -96,30 +102,127 @@ namespace Tiriryarai.Http
 		/// <param name="req">The HTTP request to send.</param>
 		public HttpResponse Send(HttpRequest req)
 		{
-			if (isClosed)
+			for (int ctr = 0; ctr < retries; ctr++)
 			{
-				openConnection = new TcpClient(Hostname, port);
-				server = openConnection.GetStream();
-				if (timeout > 0)
-					server.ReadTimeout = timeout;
+				try
+				{
+					EnsureOpenConnection();
+					req.ToStream(server);
+					server.Flush();
+					return HttpResponse.FromStream(server);
+				}
+				catch (IOException)
+				{
+					Close();
+				}
 			}
-			if (tls && !(server is SslStream))
+			throw new IOException("Failed to obtain reply after " + retries + " attempts");
+		}
+
+		/// <summary>
+		/// Opens an HTTPS session to the host, sends the given HTTP request
+		/// and <paramref name="body"/>, and retreives an HTTP response.
+		/// Examines the <c>Connection</c> headers of the HTTP messages to
+		/// determine whether to keep the connection alive or close it.
+		/// </summary>
+		/// <returns>The retreived HTTP response.</returns>
+		/// <param name="req">The HTTP request to send.</param>
+		/// <param name="body">Where to read the HTTP body of the request from.</param>
+		public HttpResponse SendFromStream(HttpRequest req, Stream body)
+		{
+			for (int ctr = 0; ctr < retries; ctr++)
 			{
-				SslStream sslStream = ignoreCerts ? new SslStream(
-					openConnection.GetStream(),
-					false,
-					new RemoteCertificateValidationCallback(ValidateServerCertificate),
-					null
-				) : new SslStream(openConnection.GetStream());
-				sslStream.AuthenticateAsClient(Hostname, null,
-					SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12 | SslProtocols.Tls13, false);
-
-				server = sslStream;
+				try
+				{
+					EnsureOpenConnection();
+					req.ToStream(server, body);
+					server.Flush();
+					return HttpResponse.FromStream(server);
+				}
+				catch (IOException)
+				{
+					Close();
+				}
 			}
-			req.ToStream(server);
-			server.Flush();
+			throw new IOException("Failed to obtain reply after " + retries + " attempts");
+		}
 
-			return HttpResponse.FromStream(server);
+		/// <summary>
+		/// Opens an HTTPS session to the host, sends the given HTTP request
+		/// and retreives an HTTP response whose body is written to <paramref name="body"/>.
+		/// Examines the <c>Connection</c> headers of the HTTP messages to
+		/// determine whether to keep the connection alive or close it.
+		/// </summary>
+		/// <returns>The retreived HTTP response.</returns>
+		/// <param name="req">The HTTP request to send.</param>
+		/// <param name="body">Where to write the HTTP body of the response.</param>
+		public HttpResponse SendToStream(HttpRequest req, Stream body)
+		{
+			for (int ctr = 0; ctr < retries; ctr++)
+			{
+				try
+				{
+					EnsureOpenConnection();
+					req.ToStream(server);
+					server.Flush();
+					return HttpResponse.FromStream(server, body);
+				}
+				catch (IOException)
+				{
+					Close();
+				}
+			}
+			throw new IOException("Failed to obtain reply after " + retries + " attempts");
+		}
+
+		/// <summary>
+		/// Opens an HTTPS session to the host, sends the given HTTP request
+		/// and retreives an HTTP response asynchronously. Examines the <c>Connection</c>
+		/// headers of the HTTP messages to determine whether to keep the
+		/// connection alive or close it.
+		/// </summary>
+		/// <returns>The retreived HTTP response.</returns>
+		/// <param name="req">The HTTP request to send.</param>
+		public Task<HttpResponse> SendAsync(HttpRequest req)
+		{
+			return Task<HttpResponse>.Run(() =>
+			{
+				return Send(req);
+			});
+		}
+
+		/// <summary>
+		/// Opens an HTTPS session to the host, sends the given HTTP request
+		/// and <paramref name="body"/>, and retreives an HTTP response asynchronously.
+		/// Examines the <c>Connection</c> headers of the HTTP messages to
+		/// determine whether to keep the connection alive or close it.
+		/// </summary>
+		/// <returns>The retreived HTTP response.</returns>
+		/// <param name="req">The HTTP request to send.</param>
+		/// <param name="body">Where to read the HTTP body of the request from.</param>
+		public Task<HttpResponse> SendFromStreamAsync(HttpRequest req, Stream body)
+		{
+			return Task<HttpResponse>.Run(() =>
+			{
+				return SendFromStream(req, body);
+			});
+		}
+
+		/// <summary>
+		/// Opens an HTTPS session to the host, sends the given HTTP request
+		/// and retreives an HTTP response whose body is written to <paramref name="body"/>
+		/// asynchronously. Examines the <c>Connection</c> headers of the HTTP messages to
+		/// determine whether to keep the connection alive or close it.
+		/// </summary>
+		/// <returns>The retreived HTTP response.</returns>
+		/// <param name="req">The HTTP request to send.</param>
+		/// <param name="body">Where to write the HTTP body of the response.</param>
+		public Task<HttpResponse> SendToStreamAsync(HttpRequest req, Stream body)
+		{
+			return Task<HttpResponse>.Run(() =>
+			{
+				return SendToStream(req, body);
+			});
 		}
 
 		// TODO is it better to implement IDisposable? The object should be closable
@@ -152,6 +255,30 @@ namespace Tiriryarai.Http
 			{
 				openConnection.Close();
 				openConnection = null;
+			}
+		}
+
+		private void EnsureOpenConnection()
+		{
+			if (isClosed)
+			{
+				openConnection = new TcpClient(Hostname, port);
+				server = openConnection.GetStream();
+				if (timeout > 0)
+					server.ReadTimeout = timeout;
+			}
+			if (tls && !(server is SslStream))
+			{
+				SslStream sslStream = ignoreCerts ? new SslStream(
+					openConnection.GetStream(),
+					false,
+					new RemoteCertificateValidationCallback(ValidateServerCertificate),
+					null
+				) : new SslStream(openConnection.GetStream());
+				sslStream.AuthenticateAsClient(Hostname, null,
+					SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12 | SslProtocols.Tls13, false);
+
+				server = sslStream;
 			}
 		}
 	}

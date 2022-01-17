@@ -183,7 +183,7 @@ namespace Tiriryarai.Http
 		/// Writes an <see cref="T:Tiriryarai.Http.HttpRequest"/> instance to a stream.
 		/// </summary>
 		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpRequest"/> to.</param>
-		public override void ToStream(Stream stream)
+		public new void ToStream(Stream stream)
 		{
 			byte[] enc = Encoding.Default.GetBytes(RequestLine);
 			stream.Write(enc, 0, enc.Length);
@@ -195,7 +195,7 @@ namespace Tiriryarai.Http
 		/// </summary>
 		/// <param name="stream">The stream to write the <see cref="T:Tiriryarai.Http.HttpRequest"/> to.</param>
 		/// <param name="body">The stream to copy the HTTP body from.</param>
-		public override void ToStream(Stream stream, Stream body)
+		public new void ToStream(Stream stream, Stream body)
 		{
 			byte[] enc = Encoding.Default.GetBytes(RequestLine);
 			stream.Write(enc, 0, enc.Length);
