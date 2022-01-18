@@ -57,6 +57,7 @@ namespace Tiriryarai.Http
 		public HttpsClient(string hostname, int timeout) : this(hostname, timeout, true) { }
 		public HttpsClient(string hostname, int timeout, bool tls) : this(hostname, timeout, tls, false, 5) { }
 		public HttpsClient(string hostname, int timeout, int retries) : this(hostname, timeout, true, false, retries) { }
+		public HttpsClient(string hostname, int timeout, bool tls, bool ignoreCerts) : this(hostname, timeout, tls, ignoreCerts, 5) { }
 		public HttpsClient(string hostname, int timeout, bool tls, int retries) : this(hostname, timeout, tls, false, retries) { }
 
 		/// <summary>
