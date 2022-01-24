@@ -112,7 +112,7 @@ namespace Tiriryarai.Http
 					server.Flush();
 					return HttpResponse.FromStream(server);
 				}
-				catch (IOException)
+				catch (Exception)
 				{
 					Close();
 				}
@@ -140,7 +140,7 @@ namespace Tiriryarai.Http
 					server.Flush();
 					return HttpResponse.FromStream(server);
 				}
-				catch (IOException)
+				catch (Exception)
 				{
 					Close();
 				}
@@ -168,7 +168,7 @@ namespace Tiriryarai.Http
 					server.Flush();
 					return HttpResponse.FromStream(server, body);
 				}
-				catch (IOException)
+				catch (Exception)
 				{
 					Close();
 				}
